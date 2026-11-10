@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+vendor/
+
+# Build output and caches
+dist/
+build/
+circuits/build/
+*.tsbuildinfo
+.turbo/
+.cache/
+coverage/
+test-results/
+playwright-report/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Secrets and keys (testnet keys live only in .env)
+.env
+.env.*
+!.env.example
+*.key
+*.seed
+*.pem
+keys/
+
+# Tool scratch state (impeccable decision pages, payloads)
+/.impeccable/
+
+# Render check artefacts
+brand/cover-thumb.png
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# Circuit v1 setups: keep config.json and the VKs; the proving key and
+# constraint system are large, and state.json is private rollup state.
+circuits/setup/cloister*/pk.bin
+circuits/setup/cloister*/ccs.bin
+circuits/setup/cloister*/state.json
+circuits/setup/cloister*/keys.json
+packages/explorer/data.json
+packages/receipts/web/app.js
+circuits/setup/cloister*/mempool.json
+circuits/setup/cloister*/proofs/
+receipts/.*.epoch
