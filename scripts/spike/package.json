@@ -1,0 +1,26 @@
+{
+  "name": "@cloister/spike",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "network": "tsx src/network.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "keygen": "tsx src/keygen.ts",
+    "status": "tsx src/status.ts",
+    "register-keys": "tsx src/register-keys.ts",
+    "create-dev": "tsx src/create-dev.ts",
+    "fund": "tsx src/fund.ts",
+    "members-post": "tsx src/members-post.ts",
+    "batch": "tsx src/batch.ts",
+    "receipt": "tsx src/receipt.ts",
+    "stop-dev": "tsx src/stop-dev.ts",
+    "gen-vectors": "tsx src/gen-vectors.ts",
+    "ledger": "tsx src/ledger.ts"
+  },
+  "dependencies": {
+    "@cloister/common": "workspace:*",
+    "@qorechain/rdk": "0.9.0",
+    "@qorechain/qoresign": "0.2.0"
+  }
+}
