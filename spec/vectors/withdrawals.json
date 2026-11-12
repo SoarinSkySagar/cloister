@@ -1,0 +1,242 @@
+[
+  {
+    "name": "cloister-1",
+    "input": {
+      "chain_id": "qorechain-diana",
+      "rollup_id": "cloister",
+      "withdrawals": [
+        {
+          "recipient": "qor12jmzemjntpkfr4ler3rdwpemrv3qg7pzxkpxkm",
+          "denom": "uqor",
+          "amount": "1000007"
+        }
+      ]
+    },
+    "expected": {
+      "leaves": [
+        "7f8857b1c027477b1e1a76eb4b402efedb0495b506bd057f7700c445a7333a8a"
+      ],
+      "root": "7f8857b1c027477b1e1a76eb4b402efedb0495b506bd057f7700c445a7333a8a",
+      "root_mod_r": "0b9ab05e9689ca32eae09ee3419e56f98746f1b206bea9807700c446a7333a89"
+    }
+  },
+  {
+    "name": "cloister-2",
+    "input": {
+      "chain_id": "qorechain-diana",
+      "rollup_id": "cloister",
+      "withdrawals": [
+        {
+          "recipient": "qor12jmzemjntpkfr4ler3rdwpemrv3qg7pzxkpxkm",
+          "denom": "uqor",
+          "amount": "1000007"
+        },
+        {
+          "recipient": "qor1lyu0fnsxvxvwmhwnmuvrln9st4z70dap5mzkad",
+          "denom": "uqor",
+          "amount": "2000007"
+        }
+      ]
+    },
+    "expected": {
+      "leaves": [
+        "7f8857b1c027477b1e1a76eb4b402efedb0495b506bd057f7700c445a7333a8a",
+        "0f997169bb8416e179a10114850e31daf7b85a15e628b722fbee54a034e76f07"
+      ],
+      "root": "890cb8af88667978242f8db0b2f4f4ee834186486d5ca27743867fed18e38db3",
+      "root_mod_r": "151f115c5ec8fc2ff0f5b5a8a9531ce92f83e2456d5e467843867fee18e38db2"
+    }
+  },
+  {
+    "name": "cloister-3",
+    "input": {
+      "chain_id": "qorechain-diana",
+      "rollup_id": "cloister",
+      "withdrawals": [
+        {
+          "recipient": "qor12jmzemjntpkfr4ler3rdwpemrv3qg7pzxkpxkm",
+          "denom": "uqor",
+          "amount": "1000007"
+        },
+        {
+          "recipient": "qor1lyu0fnsxvxvwmhwnmuvrln9st4z70dap5mzkad",
+          "denom": "uqor",
+          "amount": "2000007"
+        },
+        {
+          "recipient": "qor16qg03qnndz6zzgz02ezda5agyrjwcyh4m3eh77",
+          "denom": "uqor",
+          "amount": "3000007"
+        }
+      ]
+    },
+    "expected": {
+      "leaves": [
+        "7f8857b1c027477b1e1a76eb4b402efedb0495b506bd057f7700c445a7333a8a",
+        "0f997169bb8416e179a10114850e31daf7b85a15e628b722fbee54a034e76f07",
+        "bae1441d9c284997a7bb5d18410cc2ad2df35f8edd6add8dec359432aa8bd616"
+      ],
+      "root": "2f4fd5674bbef92ba8753c49142f5077077f19400e3eac4a145d4e1e62d9b59e",
+      "root_mod_r": "2f4fd5674bbef92ba8753c49142f5077077f19400e3eac4a145d4e1e62d9b59e"
+    }
+  },
+  {
+    "name": "cloister-4",
+    "input": {
+      "chain_id": "qorechain-diana",
+      "rollup_id": "cloister",
+      "withdrawals": [
+        {
+          "recipient": "qor12jmzemjntpkfr4ler3rdwpemrv3qg7pzxkpxkm",
+          "denom": "uqor",
+          "amount": "1000007"
+        },
+        {
+          "recipient": "qor1lyu0fnsxvxvwmhwnmuvrln9st4z70dap5mzkad",
+          "denom": "uqor",
+          "amount": "2000007"
+        },
+        {
+          "recipient": "qor16qg03qnndz6zzgz02ezda5agyrjwcyh4m3eh77",
+          "denom": "uqor",
+          "amount": "3000007"
+        },
+        {
+          "recipient": "qor12jmzemjntpkfr4ler3rdwpemrv3qg7pzxkpxkm",
+          "denom": "uqor",
+          "amount": "4000007"
+        }
+      ]
+    },
+    "expected": {
+      "leaves": [
+        "7f8857b1c027477b1e1a76eb4b402efedb0495b506bd057f7700c445a7333a8a",
+        "0f997169bb8416e179a10114850e31daf7b85a15e628b722fbee54a034e76f07",
+        "bae1441d9c284997a7bb5d18410cc2ad2df35f8edd6add8dec359432aa8bd616",
+        "2ad69691a6cdf915e7f6f55231074c8f7c8bd4b048d4439f4cbe6d837a6f4143"
+      ],
+      "root": "0688db7b63a4dde1485a69654a1a29ef79ba6016fbb3d1c59c7c31112f5bfbb4",
+      "root_mod_r": "0688db7b63a4dde1485a69654a1a29ef79ba6016fbb3d1c59c7c31112f5bfbb4"
+    }
+  },
+  {
+    "name": "cloister-dev-2-1",
+    "input": {
+      "chain_id": "qorechain-diana",
+      "rollup_id": "cloister-dev-2",
+      "withdrawals": [
+        {
+          "recipient": "qor12jmzemjntpkfr4ler3rdwpemrv3qg7pzxkpxkm",
+          "denom": "uqor",
+          "amount": "1000007"
+        }
+      ]
+    },
+    "expected": {
+      "leaves": [
+        "d828b4e0fe4d14965bb83d5be7275b5b9df293881c07b52798b6341d0a73138d"
+      ],
+      "root": "d828b4e0fe4d14965bb83d5be7275b5b9df293881c07b52798b6341d0a73138d",
+      "root_mod_r": "643b0d8dd4af974e287e6553dd8583564a34ef851c09592898b6341e0a73138c"
+    }
+  },
+  {
+    "name": "cloister-dev-2-2",
+    "input": {
+      "chain_id": "qorechain-diana",
+      "rollup_id": "cloister-dev-2",
+      "withdrawals": [
+        {
+          "recipient": "qor12jmzemjntpkfr4ler3rdwpemrv3qg7pzxkpxkm",
+          "denom": "uqor",
+          "amount": "1000007"
+        },
+        {
+          "recipient": "qor1lyu0fnsxvxvwmhwnmuvrln9st4z70dap5mzkad",
+          "denom": "uqor",
+          "amount": "2000007"
+        }
+      ]
+    },
+    "expected": {
+      "leaves": [
+        "d828b4e0fe4d14965bb83d5be7275b5b9df293881c07b52798b6341d0a73138d",
+        "22507a4c1c4756fc0be55e41de57e60aa84c0695e03313c1316a97c83cd6c04e"
+      ],
+      "root": "3c5ba87b0d4dea6b839f710570f5421a28828b31138f8522b51ae0136995cd20",
+      "root_mod_r": "3c5ba87b0d4dea6b839f710570f5421a28828b31138f8522b51ae0136995cd20"
+    }
+  },
+  {
+    "name": "cloister-dev-2-3",
+    "input": {
+      "chain_id": "qorechain-diana",
+      "rollup_id": "cloister-dev-2",
+      "withdrawals": [
+        {
+          "recipient": "qor12jmzemjntpkfr4ler3rdwpemrv3qg7pzxkpxkm",
+          "denom": "uqor",
+          "amount": "1000007"
+        },
+        {
+          "recipient": "qor1lyu0fnsxvxvwmhwnmuvrln9st4z70dap5mzkad",
+          "denom": "uqor",
+          "amount": "2000007"
+        },
+        {
+          "recipient": "qor16qg03qnndz6zzgz02ezda5agyrjwcyh4m3eh77",
+          "denom": "uqor",
+          "amount": "3000007"
+        }
+      ]
+    },
+    "expected": {
+      "leaves": [
+        "d828b4e0fe4d14965bb83d5be7275b5b9df293881c07b52798b6341d0a73138d",
+        "22507a4c1c4756fc0be55e41de57e60aa84c0695e03313c1316a97c83cd6c04e",
+        "c70b8eb9311a093575af478e987b0268a77662293ac79840442a659a42074d66"
+      ],
+      "root": "d5bdbdda8c2669c189c5b5636562db3af25d78d7ed6b5eec6d0e521963ca196e",
+      "root_mod_r": "61d016876288ec79568bdd5b5bc103359e9fd4d4ed6d02ed6d0e521a63ca196d"
+    }
+  },
+  {
+    "name": "cloister-dev-2-4",
+    "input": {
+      "chain_id": "qorechain-diana",
+      "rollup_id": "cloister-dev-2",
+      "withdrawals": [
+        {
+          "recipient": "qor12jmzemjntpkfr4ler3rdwpemrv3qg7pzxkpxkm",
+          "denom": "uqor",
+          "amount": "1000007"
+        },
+        {
+          "recipient": "qor1lyu0fnsxvxvwmhwnmuvrln9st4z70dap5mzkad",
+          "denom": "uqor",
+          "amount": "2000007"
+        },
+        {
+          "recipient": "qor16qg03qnndz6zzgz02ezda5agyrjwcyh4m3eh77",
+          "denom": "uqor",
+          "amount": "3000007"
+        },
+        {
+          "recipient": "qor12jmzemjntpkfr4ler3rdwpemrv3qg7pzxkpxkm",
+          "denom": "uqor",
+          "amount": "4000007"
+        }
+      ]
+    },
+    "expected": {
+      "leaves": [
+        "d828b4e0fe4d14965bb83d5be7275b5b9df293881c07b52798b6341d0a73138d",
+        "22507a4c1c4756fc0be55e41de57e60aa84c0695e03313c1316a97c83cd6c04e",
+        "c70b8eb9311a093575af478e987b0268a77662293ac79840442a659a42074d66",
+        "6ebc539c1d92b707410c9b78b9e03807133153c3276c4de2a7b856b38d371409"
+      ],
+      "root": "ccfe582e6d98502160014bfffdda22add649e6154a8dacb3c3f6cdf7a11f3082",
+      "root_mod_r": "5910b0db43fad2d92cc773f7f4384aa8828c42124a8f50b4c3f6cdf8a11f3081"
+    }
+  }
+]

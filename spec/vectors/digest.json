@@ -1,0 +1,115 @@
+[
+  {
+    "name": "a sponsored transfer",
+    "chain_id": "qorechain-diana",
+    "rollup_id": "cloister-dev-3",
+    "signed_sender": 3,
+    "nonce": "1",
+    "expiry": "53",
+    "not_before": "0",
+    "payer": 0,
+    "fee_asset": 0,
+    "max_fee": "10000",
+    "parties": [],
+    "party_slots": 3,
+    "action_slots": 3,
+    "actions": [
+      {
+        "code": 1,
+        "asset": 0,
+        "amount": "1000000",
+        "from": 3,
+        "to": 2,
+        "aux": "0000000000000000000000000000000000000000000000000000000000000000",
+        "atomic": false
+      }
+    ],
+    "domain": "1fab5f61fc935ca56096ab016d9c42f2a86f717ef34204b77af861c757c3a7a7",
+    "digest": "0283c2951843675826a1d88cd024605249d603cf7d17b87f0c6e93b8613026da"
+  },
+  {
+    "name": "a two-party atomic swap with a withdrawal, time-locked",
+    "chain_id": "qorechain-diana",
+    "rollup_id": "cloister-dev-3",
+    "signed_sender": 2,
+    "nonce": "4",
+    "expiry": "99",
+    "not_before": "7",
+    "payer": 2,
+    "fee_asset": 0,
+    "max_fee": "10000",
+    "parties": [
+      3
+    ],
+    "party_slots": 3,
+    "action_slots": 3,
+    "actions": [
+      {
+        "code": 1,
+        "asset": 1,
+        "amount": "5",
+        "from": 2,
+        "to": 3,
+        "aux": "0000000000000000000000000000000000000000000000000000000000000000",
+        "atomic": true
+      },
+      {
+        "code": 2,
+        "asset": 0,
+        "amount": "500000",
+        "from": 3,
+        "to": 0,
+        "aux": "01388adda2c1df8b298a2113aa3e1ce01827fe0dd34099183f91cd33d00b19b6",
+        "atomic": true
+      }
+    ],
+    "domain": "1fab5f61fc935ca56096ab016d9c42f2a86f717ef34204b77af861c757c3a7a7",
+    "digest": "12063ae1e3bf424f22c211913e6f34a29eac0c91f297c33cd56de4fb2b06d8d0"
+  },
+  {
+    "name": "a new account registering its key, no expiry",
+    "chain_id": "qorechain-diana",
+    "rollup_id": "cloister-dev-3",
+    "signed_sender": 4294967295,
+    "nonce": "0",
+    "expiry": "18446744073709551615",
+    "not_before": "0",
+    "payer": 0,
+    "fee_asset": 0,
+    "max_fee": "10000",
+    "parties": [],
+    "party_slots": 3,
+    "action_slots": 3,
+    "actions": [
+      {
+        "code": 3,
+        "asset": 0,
+        "amount": "0",
+        "from": 7,
+        "to": 0,
+        "aux": "0000000000000000000000000000000000000000000000000000000000003039",
+        "atomic": false
+      }
+    ],
+    "domain": "1fab5f61fc935ca56096ab016d9c42f2a86f717ef34204b77af861c757c3a7a7",
+    "digest": "5dbff0416a2c2733cc59b5110f99c0ec068f6a94a5fac81835b774061afa7bc9"
+  },
+  {
+    "name": "no fee, no actions",
+    "chain_id": "qorechain-diana",
+    "rollup_id": "cloister-dev-3",
+    "signed_sender": 5,
+    "nonce": "0",
+    "expiry": "18446744073709551615",
+    "not_before": "0",
+    "payer": 5,
+    "fee_asset": 0,
+    "max_fee": "0",
+    "parties": [],
+    "party_slots": 3,
+    "action_slots": 3,
+    "actions": [],
+    "domain": "1fab5f61fc935ca56096ab016d9c42f2a86f717ef34204b77af861c757c3a7a7",
+    "digest": "0e27dae623041af1fe83c4c6a8436fd1637016de8a48488c94a678ff28629e8e"
+  }
+]

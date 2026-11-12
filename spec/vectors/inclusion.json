@@ -1,0 +1,291 @@
+[
+  {
+    "name": "sponsored transfer, then a two-party tx where the party withdraws; two unused slots",
+    "depth": 16,
+    "input": {
+      "recipient": "qor1plfn9jpxnavtxsrwe0sg6cls5z9amy8p3tg9nu",
+      "party_slots": 3,
+      "batch_index": 8,
+      "records": [
+        {
+          "digest": "0283c2951843675826a1d88cd024605249d603cf7d17b87f0c6e93b8613026da",
+          "sender": 3,
+          "nonceBefore": "1",
+          "expiryBatch": "53",
+          "notBeforeBatch": "0",
+          "parties": [],
+          "moves": [
+            {
+              "code": 1,
+              "asset": 0,
+              "amount": "10000",
+              "from": 0,
+              "to": 1,
+              "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            {
+              "code": 1,
+              "asset": 0,
+              "amount": "1000000",
+              "from": 3,
+              "to": 2,
+              "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            {
+              "code": 0,
+              "asset": 0,
+              "amount": "0",
+              "from": 0,
+              "to": 0,
+              "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            {
+              "code": 0,
+              "asset": 0,
+              "amount": "0",
+              "from": 0,
+              "to": 0,
+              "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          ]
+        },
+        {
+          "digest": "12063ae1e3bf424f22c211913e6f34a29eac0c91f297c33cd56de4fb2b06d8d0",
+          "sender": 2,
+          "nonceBefore": "4",
+          "expiryBatch": "99",
+          "notBeforeBatch": "7",
+          "parties": [
+            3
+          ],
+          "moves": [
+            {
+              "code": 1,
+              "asset": 0,
+              "amount": "10000",
+              "from": 2,
+              "to": 1,
+              "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            {
+              "code": 1,
+              "asset": 1,
+              "amount": "5",
+              "from": 2,
+              "to": 3,
+              "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            {
+              "code": 2,
+              "asset": 0,
+              "amount": "500000",
+              "from": 3,
+              "to": 0,
+              "aux": "01388adda2c1df8b298a2113aa3e1ce01827fe0dd34099183f91cd33d00b19b6"
+            },
+            {
+              "code": 0,
+              "asset": 0,
+              "amount": "0",
+              "from": 0,
+              "to": 0,
+              "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          ]
+        },
+        null,
+        null
+      ],
+      "accounts": [
+        {
+          "index": 0,
+          "pk_commit": "48c9919e3d91f85e6654cdb6ca13ddcea0723251a9df51d987fb44b0b9c078f3",
+          "qor": "1000000000",
+          "usd": "5",
+          "nonce": "0"
+        },
+        {
+          "index": 1,
+          "pk_commit": "2b0e3d0ec79abfc5eb49187cf8504ce669e19e4b9bb752fdc2c75788ceeb0796",
+          "qor": "1000000001",
+          "usd": "5",
+          "nonce": "1"
+        },
+        {
+          "index": 2,
+          "pk_commit": "4715ac6d3e4c09f07df2b8eef3f5674029b6c4e71a913ffa5f55bf6902858cd9",
+          "qor": "1000000002",
+          "usd": "5",
+          "nonce": "2"
+        },
+        {
+          "index": 3,
+          "pk_commit": "669e9e998f130758b88837af9e335d1a3d9a65b0d9c05d73d71b6202318e1b23",
+          "qor": "1000000003",
+          "usd": "5",
+          "nonce": "3"
+        }
+      ]
+    },
+    "expected": {
+      "log_index": 65535,
+      "recipient_commit": "01388adda2c1df8b298a2113aa3e1ce01827fe0dd34099183f91cd33d00b19b6",
+      "record_hashes": [
+        "0842e7df5e3a1cb9f3a6cb03f9f2dbce167452aecb090f74baf0b001cb03822f",
+        "36205671f9df1af07b20281a9902fb93daf6e62b760377201f3797e1189e5e85",
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "0000000000000000000000000000000000000000000000000000000000000000"
+      ],
+      "tx_root": "429555338a517e8d166a3ec4679080a84806c8894134c7ad359fdb4a3ad82be3",
+      "log_leaf": "2c4e8628a4264533845daba6676dc4cbb316c87418de5bd1bc9e18c486e0f768",
+      "state_root_before_log": "0d08218ac5e49bf51fcce702c537d4bf36e2f5b60d1d75eef3172e80106137f8",
+      "state_root": "1b65bacc62ca8df8e9227436885670484bb0b59e170b021678cf8d9e0f819b91",
+      "proofs": [
+        {
+          "version": 2,
+          "chainId": "qorechain-diana",
+          "rollupId": "cloister-dev-3",
+          "batchIndex": 8,
+          "record": {
+            "digest": "0283c2951843675826a1d88cd024605249d603cf7d17b87f0c6e93b8613026da",
+            "sender": 3,
+            "nonceBefore": "1",
+            "expiryBatch": "53",
+            "notBeforeBatch": "0",
+            "parties": [],
+            "moves": [
+              {
+                "code": 1,
+                "asset": 0,
+                "amount": "10000",
+                "from": 0,
+                "to": 1,
+                "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+              },
+              {
+                "code": 1,
+                "asset": 0,
+                "amount": "1000000",
+                "from": 3,
+                "to": 2,
+                "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+              },
+              {
+                "code": 0,
+                "asset": 0,
+                "amount": "0",
+                "from": 0,
+                "to": 0,
+                "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+              },
+              {
+                "code": 0,
+                "asset": 0,
+                "amount": "0",
+                "from": 0,
+                "to": 0,
+                "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+              }
+            ]
+          },
+          "txIndex": 0,
+          "txPath": [
+            "36205671f9df1af07b20281a9902fb93daf6e62b760377201f3797e1189e5e85",
+            "0440d4ee8370b0cd0098bbc48e4b57cce27b1dbdc977f6c1b45c00064e29e374"
+          ],
+          "logPath": [
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            "0440d4ee8370b0cd0098bbc48e4b57cce27b1dbdc977f6c1b45c00064e29e374",
+            "481aa1a9f2cfe032b46ab67c606fefe32b7a2ecf06559478da75d580c3d2fdcc",
+            "5da948b9672716eebbbd4a35e92ddf4dbd4e38a41c6dd63aae3df72322768404",
+            "02d715e5565d5285ea671140f531e4309c5854479d150624bd140ab602e359e2",
+            "4bb18aa8dd8aedb73b6f9720fa3ea6253a060d3adb957d82d3dff7736b0840b6",
+            "25cbb585d9ebadbec95adff2ced60f12c2cdea94b5dc5535186c3604b1d9e31b",
+            "59137ba0bb6e434cf7a096844813584f216bca3397661bbfbcebac2c9ff319f2",
+            "0a3b2319fdd4b68a011cbd6c6b0405101bdc982f306d6719f3cd39f1bef5035a",
+            "19989c4a5abf3fdd9a9c232b229a304036f324e3eecf969a3d177f6857488028",
+            "167bbfd5af0f7f7d75d5cb0fc33db4a6d9e6da5bb1f91fbc5644dbc7a1144682",
+            "62d2d3172c22f4184d485ddb199bc70e4a3b156eebb5e9eda894adb568c69756",
+            "3fe4b09e6a0ca872058de24ea5718ee7b243f103fead5a506579931a236a27b4",
+            "0d5214eb294977b3b5a6afa682d6c2eb125cf038d30834fcbbbd5e77876e5c89",
+            "2b4f4833bb70ff77462b86ee03f9dee239641a422823db6861350f8aa64a3a39",
+            "4b3a54c023a68ffb1a5e60187f00e2904c1e2913eef29b5a58f73206baf61d57"
+          ]
+        },
+        {
+          "version": 2,
+          "chainId": "qorechain-diana",
+          "rollupId": "cloister-dev-3",
+          "batchIndex": 8,
+          "record": {
+            "digest": "12063ae1e3bf424f22c211913e6f34a29eac0c91f297c33cd56de4fb2b06d8d0",
+            "sender": 2,
+            "nonceBefore": "4",
+            "expiryBatch": "99",
+            "notBeforeBatch": "7",
+            "parties": [
+              3
+            ],
+            "moves": [
+              {
+                "code": 1,
+                "asset": 0,
+                "amount": "10000",
+                "from": 2,
+                "to": 1,
+                "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+              },
+              {
+                "code": 1,
+                "asset": 1,
+                "amount": "5",
+                "from": 2,
+                "to": 3,
+                "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+              },
+              {
+                "code": 2,
+                "asset": 0,
+                "amount": "500000",
+                "from": 3,
+                "to": 0,
+                "aux": "01388adda2c1df8b298a2113aa3e1ce01827fe0dd34099183f91cd33d00b19b6"
+              },
+              {
+                "code": 0,
+                "asset": 0,
+                "amount": "0",
+                "from": 0,
+                "to": 0,
+                "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+              }
+            ]
+          },
+          "txIndex": 1,
+          "txPath": [
+            "0842e7df5e3a1cb9f3a6cb03f9f2dbce167452aecb090f74baf0b001cb03822f",
+            "0440d4ee8370b0cd0098bbc48e4b57cce27b1dbdc977f6c1b45c00064e29e374"
+          ],
+          "logPath": [
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            "0440d4ee8370b0cd0098bbc48e4b57cce27b1dbdc977f6c1b45c00064e29e374",
+            "481aa1a9f2cfe032b46ab67c606fefe32b7a2ecf06559478da75d580c3d2fdcc",
+            "5da948b9672716eebbbd4a35e92ddf4dbd4e38a41c6dd63aae3df72322768404",
+            "02d715e5565d5285ea671140f531e4309c5854479d150624bd140ab602e359e2",
+            "4bb18aa8dd8aedb73b6f9720fa3ea6253a060d3adb957d82d3dff7736b0840b6",
+            "25cbb585d9ebadbec95adff2ced60f12c2cdea94b5dc5535186c3604b1d9e31b",
+            "59137ba0bb6e434cf7a096844813584f216bca3397661bbfbcebac2c9ff319f2",
+            "0a3b2319fdd4b68a011cbd6c6b0405101bdc982f306d6719f3cd39f1bef5035a",
+            "19989c4a5abf3fdd9a9c232b229a304036f324e3eecf969a3d177f6857488028",
+            "167bbfd5af0f7f7d75d5cb0fc33db4a6d9e6da5bb1f91fbc5644dbc7a1144682",
+            "62d2d3172c22f4184d485ddb199bc70e4a3b156eebb5e9eda894adb568c69756",
+            "3fe4b09e6a0ca872058de24ea5718ee7b243f103fead5a506579931a236a27b4",
+            "0d5214eb294977b3b5a6afa682d6c2eb125cf038d30834fcbbbd5e77876e5c89",
+            "2b4f4833bb70ff77462b86ee03f9dee239641a422823db6861350f8aa64a3a39",
+            "4b3a54c023a68ffb1a5e60187f00e2904c1e2913eef29b5a58f73206baf61d57"
+          ]
+        }
+      ]
+    }
+  }
+]
