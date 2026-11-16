@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920">
+<title>Cloister cover</title>
+<style>
+  @font-face {
+    font-family: "Archivo";
+    src: url("node_modules/@fontsource-variable/archivo/files/archivo-latin-wdth-normal.woff2") format("woff2-variations");
+    font-weight: 100 900;
+    font-stretch: 62% 125%;
+  }
+  @font-face {
+    font-family: "Courier Prime";
+    src: url("node_modules/@fontsource/courier-prime/files/courier-prime-latin-400-normal.woff2") format("woff2");
+    font-weight: 400;
+  }
+  @font-face {
+    font-family: "Courier Prime";
+    src: url("node_modules/@fontsource/courier-prime/files/courier-prime-latin-700-normal.woff2") format("woff2");
+    font-weight: 700;
+  }
+
+  :root {
+    --canary: #ede06a;      /* carbonless copy, part 2 */
+    --canary-deep: #d9c84a; /* shadow of the sheet beneath */
+    --sheet: #f4f1e8;       /* white original peeking under */
+    --ink: #22205c;         /* printed form ink, deep blue-violet */
+    --rule: rgba(34, 32, 92, 0.55);
+    --redact: #141414;
+    --stamp: #4b3fb4;       /* rubber-stamp violet */
+    --type: #1d1c1a;        /* typewriter ribbon */
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; }
+  body { background: var(--ink); font-family: "Archivo", sans-serif; color: var(--ink); }
+
+  /* The form set: white original under, canary copy on top, offset like a torn carbon set. */
+  .set { position: absolute; inset: 0; }
+  .original {
+    position: absolute; left: 62px; top: 58px; right: 10px; bottom: 6px;
+    background: var(--sheet);
+    /* the original's own printed field rules, showing past the copy's edge */
+    background-image:
+      linear-gradient(var(--rule), var(--rule)),
+      linear-gradient(var(--rule), var(--rule));
+    background-size: 2px 100%, 100% 2px;
+    background-position: calc(100% - 18px) 0, 0 calc(100% - 16px);
+    background-repeat: no-repeat;
+  }
+  .copy {
+    position: absolute; left: 30px; top: 26px; right: 50px; bottom: 40px;
+    background: var(--canary);
+    box-shadow: 0 6px 14px rgba(10, 9, 40, 0.28);
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr) 72px;
+  }
+
+  /* Tractor-feed margins: continuous-form sprocket holes. */
+  .feed {
+    border-color: var(--rule);
+    border-style: dashed;
+    border-width: 0;
+    display: flex; flex-direction: column; justify-content: space-around; align-items: center;
+    padding: 18px 0;
+  }
+  .feed.left { border-right-width: 2px; }
+  .feed.right { border-left-width: 2px; }
+  .feed i {
+    display: block; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--ink);
+  }
+
+  .form { padding: 46px 56px 40px; display: grid; grid-template-rows: auto auto 1fr auto; gap: 0; }
+
+  /* Header: the wordmark is the form's printed title. */
+  .head { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 40px; align-items: end; border-bottom: 6px solid var(--ink); padding-bottom: 14px; }
+  .wordmark {
+    font-weight: 900; font-stretch: 125%;
+    font-size: 186px; line-height: 0.8; letter-spacing: -0.03em;
+    color: var(--ink);
+  }
+  .formno {
+    text-align: right; font-stretch: 70%; font-weight: 700; font-size: 25px; line-height: 1.25;
+    letter-spacing: 0.06em; text-transform: uppercase; padding-bottom: 10px; white-space: nowrap;
+  }
+  .formno b { font-weight: 900; font-size: 34px; letter-spacing: 0.02em; display: block; }
+
+  .sub {
+    display: flex; justify-content: space-between; border-bottom: 2px solid var(--ink);
+    font-stretch: 70%; font-weight: 700; font-size: 27px; letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 10px 2px 9px;
+  }
+
+  /* Field grid */
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.15fr);
+    grid-template-rows: 1fr 1fr 1.25fr;
+    border-left: 2px solid var(--ink);
+  }
+  .f {
+    border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink);
+    padding: 12px 18px 14px; position: relative;
+    display: flex; flex-direction: column; justify-content: space-between; gap: 10px;
+  }
+  .f label {
+    font-stretch: 70%; font-weight: 700; font-size: 26px; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--ink); white-space: nowrap;
+  }
+  .f label em { font-style: normal; font-weight: 500; opacity: 0.75; }
+  .typed {
+    font-family: "Courier Prime", monospace; font-weight: 700; font-size: 36px; line-height: 1.12;
+    color: var(--type); letter-spacing: 0.01em;
+    text-shadow: 0.4px 0.2px 0 rgba(29, 28, 26, 0.4);
+  }
+  .typed.sm { font-size: 31px; }
+  .wide2 { grid-column: span 2; }
+
+  /* Redaction: solid bars sized like the text they hide. */
+  .bar { display: block; height: 38px; background: var(--redact); }
+  .bars { display: grid; gap: 12px; }
+
+  /* Remarks line at the foot of the form: the tagline, typed in. */
+  .remarks {
+    border: 2px solid var(--ink); border-top: 0;
+    display: grid; grid-template-columns: auto 1fr; gap: 22px; align-items: baseline;
+    padding: 18px 18px 20px;
+  }
+  .remarks label {
+    font-stretch: 70%; font-weight: 700; font-size: 21px; letter-spacing: 0.09em; text-transform: uppercase;
+  }
+  .remarks .typed { font-size: 40px; }
+
+  /* Rubber stamp: flat violet ink, double ring, struck at an angle in the empty part of the State root cell. */
+  .stamp {
+    position: absolute; right: 180px; top: 700px;
+    transform: rotate(-7deg);
+    color: var(--stamp);
+    border: 7px solid var(--stamp);
+    outline: 4px solid var(--stamp); outline-offset: 7px;
+    padding: 10px 26px 8px;
+    text-align: center;
+    opacity: 0.95;
+  }
+  .stamp .big { font-weight: 900; font-stretch: 100%; font-size: 72px; line-height: 0.9; letter-spacing: 0.02em; }
+  .stamp .small { font-weight: 800; font-stretch: 80%; font-size: 22px; letter-spacing: 0.16em; text-transform: uppercase; margin-top: 6px; }
+</style>
+</head>
+<body>
+<!--
+THESIS: Cloister is a filed batch record: the structure is public, the contents are blacked out, and the verdict is stamped on top. It refuses the category default of a dark crypto banner with a glowing lattice.
+OWN-WORLD: Carbonless multi-part office forms. Canary copy over a white original, printed blue-violet field grid, tractor-feed sprocket margins, solid redaction bars, violet rubber-stamp ink, typewritten entries (Courier Prime) under condensed printed labels (Archivo, width axis).
+STORY: The viewer sees a real transaction record in which exactly what Cloister reveals stays readable (batch, chain, signature scheme, proof, state root) and exactly what it hides (sender, sponsor, amount, memo) is redacted. Then they see VERIFIED: anyone can check it, only members can read it. The sheet is the public copy.
+FIRST VIEWPORT: The canary sheet fills the frame. CLOISTER is the form's printed title, top-left, at 186px (stepped down from 214px so the header fits inside the form's margins). The field grid fills the middle, with the redacted fields on the left and visible fields on the right. A flat violet VERIFIED stamp with a double ring sits in the empty right part of the State root cell, rotated -7deg, so it never covers a visible fact. The tagline is typed on the REMARKS line along the foot. No call to action: it's a cover image.
+FORM: Candidate 7 of 7 (The Redacted Record), staging: a single sheet, flat, front-on. Seed key 8e9700e3 (degraded roll, no challengers).
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+-->
+<div class="set">
+  <div class="original"></div>
+  <div class="copy">
+    <div class="feed left"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <div class="form">
+      <header class="head">
+        <h1 class="wordmark">CLOISTER</h1>
+        <div class="formno"><b>Form CL-1</b>Batch settlement record<br>Public copy</div>
+      </header>
+
+      <div class="sub">
+        <span>Private ZK rollup on QoreChain</span>
+        <span>Sealed to members · ML-KEM-1024</span>
+      </div>
+
+      <section class="grid">
+        <div class="f">
+          <label>Sender</label>
+          <span class="bar" style="width: 88%"></span>
+        </div>
+        <div class="f">
+          <label>Sponsor <em>(pays gas)</em></label>
+          <span class="bar" style="width: 74%"></span>
+        </div>
+        <div class="f">
+          <label>Batch no.</label>
+          <span class="typed">000001</span>
+        </div>
+        <div class="f">
+          <label>Signature</label>
+          <span class="typed">ML-DSA-87</span>
+        </div>
+
+        <div class="f">
+          <label>Amount</label>
+          <span class="bar" style="width: 62%"></span>
+        </div>
+        <div class="f">
+          <label>Action frames</label>
+          <span class="bar" style="width: 81%"></span>
+        </div>
+        <div class="f wide2">
+          <label>Proof</label>
+          <span class="typed">GROTH16 / BLS12-381</span>
+        </div>
+
+        <div class="f wide2">
+          <label>Memo</label>
+          <span class="bars">
+            <span class="bar" style="width: 96%"></span>
+            <span class="bar" style="width: 71%"></span>
+          </span>
+        </div>
+        <div class="f wide2">
+          <label>State root</label>
+          <span class="typed sm">5e1f 09ab 77c2 &hellip; c0a9</span>
+        </div>
+      </section>
+
+      <div class="remarks">
+        <label>Remarks</label>
+        <span class="typed">Members read it. Anyone can verify it.</span>
+      </div>
+    </div>
+
+    <div class="feed right"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  </div>
+
+  <div class="stamp" aria-label="Verified, settled by proof">
+    <div class="big">VERIFIED</div>
+    <div class="small">Settled by proof</div>
+  </div>
+</div>
+</body>
+</html>

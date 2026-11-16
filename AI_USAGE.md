@@ -14,3 +14,4 @@ Cloister is built AI-natively: the two team members direct, decide and review, a
 | 2026-11-16 | Team | Chose a private ZK rollup over a sidechain or an optimistic rollup; added frame transactions and sponsorship; Part B dark pool as a gated stretch goal; named it Cloister |
 | 2026-11-16 | Claude | Read the RDK 0.9.0 source: VK is gnark-encoded and locks after the first batch, so the circuit moves to gnark with a dev-rollup cycle strategy |
 | 2026-11-16 | Claude | Scaffolded the repo: CLAUDE.md, specs, docs, workspace, gnark spike circuit, network check |
+| 2026-11-16 | Team + Claude | Cover image via the impeccable skill: team set the audience (jury, voters, future users) and the brand rules, and chose the "Redacted Record" direction on impeccable's decision page. Claude built brand/cover.html and rendered it with Playwright; an independent reviewer subagent ran two correction rounds (fixed a "member copy" story error, stamp material, margins) |

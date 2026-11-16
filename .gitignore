@@ -1,12 +1,41 @@
+# Dependencies
 node_modules/
+.pnpm-store/
+vendor/
+
+# Build output and caches
 dist/
 build/
+circuits/build/
+*.tsbuildinfo
+.turbo/
+.cache/
+coverage/
+test-results/
+playwright-report/
+
+# Logs
 *.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Secrets and keys (testnet keys live only in .env)
 .env
 .env.*
 !.env.example
 *.key
 *.seed
+*.pem
 keys/
-circuits/build/
+
+# Tool scratch state (impeccable decision pages, payloads)
+/.impeccable/
+
+# Render check artefacts
+brand/cover-thumb.png
+
+# OS / editor
 .DS_Store
+Thumbs.db
+.idea/
+*.swp
