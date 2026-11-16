@@ -106,7 +106,7 @@ components:
 
 # Design System: Cloister
 
-<!-- Recorded from the shipped cover (brand/cover.html, rendered brand/cover.png, 1920x1080). The build is ground truth. This file lives in brand/ on purpose: the repo-root design.md is the team's build plan, not this visual system. -->
+<!-- Recorded from the shipped cover (rendered brand/cover.png, 1920x1080; its HTML source was removed after rendering and is in git history at commit fbc3c12). The build is ground truth. This file lives in brand/ on purpose: the repo-root design.md is the team's build plan, not this visual system. -->
 
 ## Overview
 
