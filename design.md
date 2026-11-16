@@ -1,9 +1,10 @@
-# Private ZK Rollup with Frame Transactions: Architecture and Build Plan
+# Cloister: Private ZK Rollup with Frame Transactions
 
 Track: Protocol Builders (QoreChain Build Before Q-Day). Deadline: **2 Dec 2026, 23:59 UTC**. Revised 16 Nov.
-Companion reference: [QORECHAIN_PROTOCOL_BUILDERS.md](QORECHAIN_PROTOCOL_BUILDERS.md)
+**Rollup ID: `cloister`** (free on testnet as of 16 Nov; permanent once created). Team: 2 people, with Claude building and the team directing and reviewing.
+Companion reference: [docs/qorechain-reference.md](docs/qorechain-reference.md)
 
-**Pitch:** a private sidechain on QoreChain that settles with ZK proofs.
+**Pitch:** *Cloister is a members-only private sidechain on QoreChain that settles with ZK proofs.*
 - Transactions are **frame transactions modelled on EIP-8141**, with ML-DSA-87 signatures natively.
 - **Gas sponsorship:** a relayer posts sealed transactions, so users need no L1 QOR, and the L1 never learns who transacted.
 - Contents are encrypted with ML-KEM-1024 and enforced by the chain.
@@ -11,6 +12,28 @@ Companion reference: [QORECHAIN_PROTOCOL_BUILDERS.md](QORECHAIN_PROTOCOL_BUILDER
 - A watchtower guards what validity proofs can't cover.
 
 **Build strategy:** ship the **core rollup** (Part A) first. It meets every track requirement on its own. Add the **DeFi dark pool** (Part B) only if the 26 Nov go/no-go passes.
+
+## Findings from the RDK 0.9.0 source (16 Nov): these override older text below
+
+1. **The VK format is gnark.** `SetVerificationKeyInput.verificationKey` is a "Groth16 BLS12-381 verifying key, gnark binary encoding, four public inputs". **The circuit is written in gnark (Go, Apache-2.0)**, not circom. That also avoids GPL-3.0 code, since circomlib and snarkjs are GPL-3.0 and the repo is MIT.
+2. **The VK locks after the first batch.** The creator can set or replace it (`setVerificationKey`) **only before batch 0**. After that, `updateVerificationKeyMsg` is **governance-only** (error 39 `verification_key_locked`). There is no "trivial circuit first, upgrade later" path on one rollup.
+3. **Private rollups must be ZK with a Groth16 key** (error 48 hint), so the key is registered at creation (`CreateRollupInput.verificationKey`).
+4. **Based rollups can only be paused or stopped by governance.** A dedicated-sequencer rollup can be stopped by its creator, which refunds the stake minus the 1% burn (as long as it holds no deposits and its latest batch isn't pending).
+5. **The RDK has the chain's envelope format built in:** `sealEnvelope` / `openEnvelope` / `envelopeMembershipError` / `kemKeypairFromSeed` / `registerKemKeyMsg`. Each envelope needs one entry per member, in the rollup's member order, at the current membership epoch. **Use these for posts**, not raw QoreSeal envelopes.
+6. Batch posting uses `postRollupDataMsg`, and the response carries the inbox sequence. `RdkTxClient.submitBatch` produces the `anchorSignature` itself when it signs hybrid.
+
+### Resulting rollup strategy
+
+| Rollup | Settings | Purpose | Lifetime |
+|---|---|---|---|
+| `cloister-dev-N` | `defi`, zk, private, **dedicated** sequencing | Every test cycle with the current circuit | Stop after each circuit change (refund ≈ 99%, ~100 QOR burned each time), then create the next N |
+| **`cloister`** | `defi`, zk, private, based if allowed (otherwise dedicated) | The submitted rollup | Created **once**, with the **frozen final circuit** (Part A, or Part A+B), ideally by 28 Nov |
+
+Budget: 15,000 QOR covers one live rollup at a time (10,000 stake + 1,000 layer) plus about 30 dev-cycle burns.
+
+Because of finding 2:
+- **Part B must be in the final circuit** before `cloister` is created. It can't be added later.
+- The watchtower's "VK swap" alarm watches **governance** VK updates.
 
 ---
 
@@ -52,7 +75,7 @@ Companion reference: [QORECHAIN_PROTOCOL_BUILDERS.md](QORECHAIN_PROTOCOL_BUILDER
 
 | # | Component | Stack | Owner |
 |---|---|---|---|
-| 1 | Circuit | circom 2 `--prime bls12381` + snarkjs, *or* gnark. Choose during the spike (VK format) | A |
+| 1 | Circuit | **gnark** (Go) Groth16 over BLS12-381. The chain wants gnark-encoded VKs | A |
 | 2 | Sequencer/prover | TypeScript, `@qorechain/rdk` 0.9.0, `@qorechain/qoreseal` | B |
 | 3 | Relayer | TypeScript service. Posts envelopes and earns sponsor fees | B |
 | 4 | Wallet/CLI | TypeScript: QoreSign (ML-DSA-87) and QoreSeal | D |
@@ -96,7 +119,7 @@ Frame { mode: u8, flags: u8, kind: u8, params: bytes }
 | 0x11 cancel_order | reserved for Part B | `order_id` |
 
 **Signature hash:**
-`SHAKE-256( "qzr-frametx-v1" ‖ lp(chain_id) ‖ lp(rollup_id) ‖ canonical_encode(tx with every signatures[i].sig replaced by its length) )`
+`SHAKE-256/32( "cloister/frametx/v1" ‖ enc_unsigned(tx) )`. See [spec/frame-tx.md](spec/frame-tx.md); `chain_id` and `rollup_id` are inside the encoding
 
 This binds the chain and rollup (no replay across contexts), and the sender and sponsor sign the same bytes.
 
@@ -153,7 +176,7 @@ pk_commit = SHAKE-256(ML-DSA-87 pubkey) reduced mod r              // computed o
 | **Signatures:** re-verify every ML-DSA sender and sponsor signature | Closes the circuit's auth gap |
 | **Re-execute:** recompute `state_root` and `withdrawals_root` | Independent check of the operator |
 | **Proof:** re-verify Groth16 against the stored VK | Doesn't trust the operator's claim |
-| **VK-swap alarm:** watch `MsgUpdateVerificationKey` | A new VK means new rules. Members can exit first |
+| **VK-swap alarm:** watch governance `MsgUpdateVerificationKey` proposals and the rollup's stored VK | A new VK means new rules (only governance can change it after batch 0). Members can exit first |
 | **Membership:** watch `set-members` and epoch changes | Detects reader-set changes |
 | **Data availability:** every envelope in range opens for members | Detects withholding or garbage |
 | **Liveness:** alert if the inbox head grows unbatched for more than N blocks | Detects stalls |
@@ -165,16 +188,17 @@ pk_commit = SHAKE-256(ML-DSA-87 pubkey) reduced mod r              // computed o
 
 Record every transaction hash in PROOF.md.
 
-- [ ] Register ML-DSA (hybrid) and **ML-KEM** keys (`MsgRegisterKEMKey`) for the sequencer and watchtower
-- [ ] Find the VK file format for `--verification-key-file` (read the RDK source and the `defi-rollup` template): snarkjs JSON or gnark
-- [ ] Create a `defi` rollup with `--privacy encapsulated` **and `--sequencing based`**. If that combination is refused, use dedicated sequencing, where the relayer sends envelopes to the sequencer and the sequencer posts them
-- [ ] Confirm a layer was registered (`layer_id` set)
-- [ ] `set-members`, then a `post-private-data` / `decrypt-private-data` round trip, posted from a **non-member** account
-- [ ] Submit a batch with a real Groth16 proof (trivial circuit with 4 public inputs) and `anchor_signature`. **The critical unknown**
+- [x] VK format: **gnark binary encoding** (from the RDK source)
+- [ ] Find out whether the chain wants gnark's compressed (`WriteTo`) or raw (`WriteRawTo`) VK encoding, and what proof byte layout `submitBatch.proof` expects. Answer by simulating `create-rollup` / `submit-batch`, or by reading `@qorechain/rdk` tests and the `defi-rollup` template
+- [ ] Register ML-DSA (hybrid) and **ML-KEM** keys (`registerKemKeyMsg`) for the sequencer and watchtower
+- [ ] Create `cloister-dev-1`: `defi`, `--privacy encapsulated`, **dedicated** sequencing, trivial gnark circuit (4 public inputs). Confirm a layer is registered (`layer_id` set)
+- [ ] `setRollupMembers`, then `sealEnvelope` → `postRollupData` → `openEnvelope` round trip
+- [ ] Submit a batch with a real Groth16 proof and `anchor_signature`. **The critical unknown**
 - [ ] `buildSettlementReceipt` + `verifySettlementReceipt` → `valid: true`
-- [ ] Include one withdrawal in a batch, then `execute-withdrawal` pays out
-- [ ] `MsgUpdateVerificationKey` works, so the spike rollup becomes the real one (one stake)
-- [ ] Check whether any deposit path exists for `defi` rollups
+- [ ] Include one withdrawal in a batch, then `executeWithdrawal` pays out
+- [ ] `stopRollup` on `cloister-dev-1` refunds the stake (proves the dev-cycle strategy)
+- [ ] **Simulate only (don't broadcast):** create a `defi` + private + `based` rollup, to learn whether the final `cloister` rollup can be based
+- [ ] Check whether any deposit path exists for `defi` rollups (`depositToRollupMsg` is documented for qledger-v1 only)
 
 **No-go (end of 18 Nov):** if the Groth16 batch or the withdrawal fails, switch to an optimistic `qledger-v1` rollup with frame transactions inside posted data. Receipts become the headline.
 
@@ -202,14 +226,14 @@ Record every transaction hash in PROOF.md.
 
 | Dates | Milestone |
 |---|---|
-| **16–17 Nov** | Register every team member (all four steps). Send the funding request (§C1). Create the repo (Apache-2.0, GitHub App). *Optional:* Q-Day Drill signup before **17 Nov 23:59 UTC** |
+| **16–17 Nov** | Register both team members (all four steps). Create the `cloister` repo (Apache-2.0, GitHub App) and the project page. Q-Day Drill signup before **17 Nov 23:59 UTC**, using a fresh account |
 | 17–18 Nov | Spike (A7) and go/no-go |
 | 19–23 Nov | Circuit v1: 2-asset ledger, transfer, fees. Sequencer/prover loop. Wallet CLI |
 | 23–25 Nov | Frame transactions end to end: sponsor frame, relayer, reimbursement |
 | 24–26 Nov | Withdrawals (in the circuit or fallback), receipts, verifier page |
 | **26 Nov** | **Part B go/no-go** (§B6) |
 | 27 Nov | Workshop 4, protocol clinic (16:30 UTC). Ask the open questions |
-| 27–29 Nov | Watchtower and dashboard (+ Part B if go) |
+| 27–29 Nov | Watchtower and dashboard (+ Part B if go). **Freeze the circuit and create the final `cloister` rollup by 28 Nov**, then run the full demo flow on it |
 | 30 Nov–1 Dec | THREAT_MODEL, LIMITS, PROOF, README (credit every kit), AI_USAGE, ≤3-min video |
 | 2 Dec | Buffer, final testnet run, **submit before 23:59 UTC** |
 
@@ -234,7 +258,7 @@ Record every transaction hash in PROOF.md.
 |---|---|
 | Frames | Enable `place_order` (0x10) and `cancel_order` (0x11). Same format, sponsorship and relayer |
 | State | Use `orders_root` in the account leaf (a per-account open-orders tree) and lock balances while orders are open |
-| Circuit | New clearing logic, then a new VK (`MsgUpdateVerificationKey`) |
+| Circuit | New clearing logic. **It must be in the final circuit before `cloister` is created**, because the VK locks after batch 0 |
 | Assets | QOR vs `USD` (rollup-internal). Only QOR is withdrawable on L1 |
 | Watchtower | Adds a clearing re-check and an order-inclusion check |
 
@@ -297,15 +321,15 @@ Otherwise, polish Part A and put B1–B5 in the README as the design for the nex
 - **Demo addition (about 30 s):**
   1. Two sealed orders are posted, and outsiders see ciphertext only.
   2. The batch clears at one price.
-  3. The operator upgrades the VK, the **watchtower flags the rule change** and members could exit.
+  3. The watchtower re-checks the clearing price and every fill independently.
 
 ---
 
 # PART C: Logistics
 
-## C1. Funding request (send today, on Discord or to team@qorechain.io)
+## C1. Funding: ✅ done (15,000 test QOR on hand)
 
-> Hi! We're a Protocol Builders team building a private ZK rollup (defi profile, `--privacy encapsulated`, Groth16) with EIP-8141-style frame transactions on qorechain-diana. Could we get about 13,000 test QOR for the 10,000 stake, 1,000 layer registration and fees? Address: `qor1…`. Pointers on the verification-key file format for `create-rollup --verification-key-file` would also help. Thanks!
+Budget: 10,000 stake (100 burned) + 1,000 layer + about 100–300 in fees ≈ 3,700 QOR left for withdrawal liquidity and the relayer. **That is enough for only one rollup.** Create `cloister` once, after a dry run (`--generate-only` + simulate, or `qorollup --dry-run`), and keep the Q-Day Drill account separate from the creator account.
 
 ## C2. Team roles
 

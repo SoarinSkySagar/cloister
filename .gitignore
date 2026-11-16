@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+*.log
+.env
+.env.*
+!.env.example
+*.key
+*.seed
+keys/
+circuits/build/
+.DS_Store
