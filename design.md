@@ -189,16 +189,18 @@ pk_commit = SHAKE-256(ML-DSA-87 pubkey) reduced mod r              // computed o
 Record every transaction hash in PROOF.md.
 
 - [x] VK format: **gnark binary encoding** (from the RDK source)
-- [ ] Find out whether the chain wants gnark's compressed (`WriteTo`) or raw (`WriteRawTo`) VK encoding, and what proof byte layout `submitBatch.proof` expects. Answer by simulating `create-rollup` / `submit-batch`, or by reading `@qorechain/rdk` tests and the `defi-rollup` template
-- [ ] Register ML-DSA (hybrid) and **ML-KEM** keys (`registerKemKeyMsg`) for the sequencer and watchtower
-- [ ] Create `cloister-dev-1`: `defi`, `--privacy encapsulated`, **dedicated** sequencing, trivial gnark circuit (4 public inputs). Confirm a layer is registered (`layer_id` set)
-- [ ] `setRollupMembers`, then `sealEnvelope` → `postRollupData` → `openEnvelope` round trip
-- [ ] Submit a batch with a real Groth16 proof and `anchor_signature`. **The critical unknown**
-- [ ] `buildSettlementReceipt` + `verifySettlementReceipt` → `valid: true`
-- [ ] Include one withdrawal in a batch, then `executeWithdrawal` pays out
-- [ ] `stopRollup` on `cloister-dev-1` refunds the stake (proves the dev-cycle strategy)
-- [ ] **Simulate only (don't broadcast):** create a `defi` + private + `based` rollup, to learn whether the final `cloister` rollup can be based
+- [x] VK and proof encoding: gnark raw and compressed are both accepted for VKs and proofs; we use raw
+- [x] Registered ML-DSA (hybrid, with PoP) and **ML-KEM** keys for the sequencer and watchtower (17 Nov, see PROOF.md)
+- [x] Created `cloister-dev-1` (17 Nov): `defi`, private, dedicated, spike gnark VK (raw); layer `cloister-dev-1` registered, escrow 9,900 QOR
+- [x] Members [operator, watchtower] set; 3,536-byte envelope posted; chain SHA-256 matches; both members open it, a non-member key is refused
+- [x] **Batches 0 and 1 verified on chain** (Groth16/BLS12-381, gnark raw or compressed proof both accepted; a tampered statement is refused), `data_hash` = SHA-256 of the sealed post, ML-DSA-87 anchor, finalized immediately
+- [x] Settlement receipt for batch 0: `valid: true`, all six checks pass (`receipts/cloister-dev-1-0.json`)
+- [x] Batch 1 committed a 1 QOR withdrawal (v2 SHAKE-256 tree in the proof); `executeWithdrawal` paid the relayer from escrow
+- [x] Stopped `cloister-dev-1`: net +10,898.93 QOR refunded (escrow + layer stake, minus the fee), layer decommissioned; receipts still verify after the stop. **The dev-cycle strategy works**
+- [x] **Simulated 17 Nov:** `defi` + private + `based` creation is **accepted**, so the final `cloister` rollup can be based
 - [ ] Check whether any deposit path exists for `defi` rollups (`depositToRollupMsg` is documented for qledger-v1 only)
+
+**Result (17 Nov UTC): GO.** Every item passed on chain, including stop-and-refund.
 
 **No-go (end of 18 Nov):** if the Groth16 batch or the withdrawal fails, switch to an optimistic `qledger-v1` rollup with frame transactions inside posted data. Receipts become the headline.
 

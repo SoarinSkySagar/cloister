@@ -5,7 +5,16 @@
   "type": "module",
   "scripts": {
     "network": "tsx src/network.ts",
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "keygen": "tsx src/keygen.ts",
+    "status": "tsx src/status.ts",
+    "register-keys": "tsx src/register-keys.ts",
+    "create-dev": "tsx src/create-dev.ts",
+    "fund": "tsx src/fund.ts",
+    "members-post": "tsx src/members-post.ts",
+    "batch": "tsx src/batch.ts",
+    "receipt": "tsx src/receipt.ts",
+    "stop-dev": "tsx src/stop-dev.ts"
   },
   "dependencies": {
     "@cloister/common": "workspace:*",

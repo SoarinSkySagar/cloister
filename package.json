@@ -6,11 +6,22 @@
   "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@10.32.1",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "spike:network": "pnpm --filter @cloister/spike network"
+    "spike:network": "pnpm --filter @cloister/spike network",
+    "spike:keygen": "pnpm --filter @cloister/spike keygen",
+    "spike:status": "pnpm --filter @cloister/spike status",
+    "spike:register-keys": "pnpm --filter @cloister/spike register-keys",
+    "spike:create-dev": "pnpm --filter @cloister/spike create-dev",
+    "spike:fund": "pnpm --filter @cloister/spike fund",
+    "spike:members-post": "pnpm --filter @cloister/spike members-post",
+    "spike:batch": "pnpm --filter @cloister/spike batch",
+    "spike:receipt": "pnpm --filter @cloister/spike receipt",
+    "spike:stop-dev": "pnpm --filter @cloister/spike stop-dev"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

@@ -16,6 +16,6 @@ The chain sends each input as 32-byte big-endian, reduced modulo `r` (`BLS12_381
 - ML-DSA signatures
 
 **OPEN (spike):**
-- Does the chain expect gnark's compressed (`WriteTo`) or raw (`WriteRawTo`) VK encoding?
+- ~~VK encoding~~ **Answered 17 Nov (simulation):** the chain accepts both raw (`WriteRawTo`) and compressed (`WriteTo`) gnark encodings at creation. We use **raw**.
 - What byte layout does `submitBatch.proof` take?
 - Is the withdrawals root built in the circuit (SHAKE-256 as Keccak in gnark) or outside it (fallback)? Decide by 25 Nov.
