@@ -14,7 +14,9 @@
     "members-post": "tsx src/members-post.ts",
     "batch": "tsx src/batch.ts",
     "receipt": "tsx src/receipt.ts",
-    "stop-dev": "tsx src/stop-dev.ts"
+    "stop-dev": "tsx src/stop-dev.ts",
+    "gen-vectors": "tsx src/gen-vectors.ts",
+    "ledger": "tsx src/ledger.ts"
   },
   "dependencies": {
     "@cloister/common": "workspace:*",

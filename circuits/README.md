@@ -5,10 +5,12 @@ Groth16 over **BLS12-381** with [gnark](https://github.com/Consensys/gnark) (Apa
 | Path | What |
 |---|---|
 | `spike/` | Trivial go/no-go circuit: correct public interface, toy rule `state_root = prev_state_root + 1` |
+| `ledger/` | **Circuit v1**: account tree, frame-tx moves, in-circuit withdrawals root. See [../spec/batch.md](../spec/batch.md) |
 | `cmd/export` | Compile, run setup (single-party, **testnet only**), prove a sample and write the VK and proof in both gnark encodings |
 
 ```bash
 go test ./...                   # includes negative tests (bad witnesses must fail)
+CLOISTER_GROTH16=1 go test ./ledger -run Groth16 -v   # full setup+prove, ~2.5 min, ~9.4 GB RAM
 go run ./cmd/export -out build  # build/ is gitignored
 ```
 

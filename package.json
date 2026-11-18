@@ -21,7 +21,8 @@
     "spike:members-post": "pnpm --filter @cloister/spike members-post",
     "spike:batch": "pnpm --filter @cloister/spike batch",
     "spike:receipt": "pnpm --filter @cloister/spike receipt",
-    "spike:stop-dev": "pnpm --filter @cloister/spike stop-dev"
+    "spike:stop-dev": "pnpm --filter @cloister/spike stop-dev",
+    "spike:ledger": "pnpm --filter @cloister/spike ledger"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

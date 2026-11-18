@@ -149,7 +149,7 @@ pk_commit = SHAKE-256(ML-DSA-87 pubkey) reduced mod r              // computed o
 - the fee is debited from the payer (the sender or the sponsor leaf) and credited to the relayer leaf
 - `withdraw` appends a leaf to the batch's withdrawals list
 
-**Withdrawals root:** the chain's SHAKE-256 tree (v2 leaf binds the chain id; layout from the RDK's `withdrawalLeafV2`), with at most 4 withdrawals per batch (depth 2).
+**Withdrawals root:** the chain's SHAKE-256 tree (v2 leaf binds the chain id; layout from the RDK's `withdrawalLeafV2`), with at most 4 withdrawals per batch (depth 2). **Decided 18 Nov: computed in the circuit** (circuit v1, `circuits/ledger`), so the fallback is not needed.
 - **Fallback (decide by 25 Nov):** compute it outside the circuit and record that trust assumption in LIMITS.md.
 
 **`data_hash`:** under based sequencing the chain sets and checks it as the inbox range commitment (over the ciphertexts). The circuit can't link ciphertext to plaintext, because that would mean proving AES-GCM inside the circuit. The **watchtower** enforces that link (A6).

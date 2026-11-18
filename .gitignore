@@ -39,3 +39,9 @@ brand/cover-thumb.png
 Thumbs.db
 .idea/
 *.swp
+
+# Circuit v1 setups: keep config.json and the VKs; the proving key and
+# constraint system are large, and state.json is private rollup state.
+circuits/setup/cloister*/pk.bin
+circuits/setup/cloister*/ccs.bin
+circuits/setup/cloister*/state.json

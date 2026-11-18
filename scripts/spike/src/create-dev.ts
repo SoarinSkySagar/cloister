@@ -11,6 +11,8 @@
  * The simulations spend nothing and tell us which VK encoding the chain takes.
  *
  * Broadcast:  --send --encoding raw|compressed   [--id cloister-dev-2]
+ * --vk-dir <dir under circuits/>: take the VK from there (default build/, the
+ * spike circuit); circuit v1 uses setup/<rollup-id>.
  */
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -32,7 +34,9 @@ if (!isValidRollupId(rollupId) || !rollupId.startsWith("cloister-dev-")) {
   throw new Error(`refusing id "${rollupId}": this script only creates cloister-dev-N rollups`);
 }
 
-const buildDir = join(REPO_ROOT, "circuits", "build");
+const vkDirArg = flag("--vk-dir");
+const buildDir = join(REPO_ROOT, "circuits", vkDirArg ?? "build");
+const circuitLabel = vkDirArg ? `circuit v1 VK (${vkDirArg})` : "spike gnark VK";
 const vkFiles = { raw: join(buildDir, "vk.raw.bin"), compressed: join(buildDir, "vk.compressed.bin") } as const;
 for (const path of Object.values(vkFiles)) {
   if (!existsSync(path)) throw new Error(`missing ${path}: run \`cd circuits && go run ./cmd/export -out build\` first`);
@@ -97,8 +101,8 @@ const res = await tx.createRollup({
 if (res.code !== 0) throw new Error(`createRollup failed (code ${res.code}): ${res.rawLog ?? ""}`);
 const created = await rdk.rest.getRollup(rollupId);
 console.log(`\ncreated ${rollupId}: ${res.transactionHash}`);
-console.log(`status ${created.status}, layer ${created.layerId || "(none)"}, escrow ${formatQor(created.escrowBalance)}`);
+console.log(`status ${created.status}, layer ${created.layerId || "(none)"}, escrow ${formatQor(created.escrowBalance)} (${created.escrowBalance} uqor)`);
 appendFileSync(
   join(REPO_ROOT, "PROOF.md"),
-  `| ${new Date().toISOString().slice(0, 10)} | Created ${rollupId} (defi, zk, private, dedicated) with the spike gnark VK (${encoding} encoding); layer ${created.layerId || "none"} | \`${res.transactionHash}\` | testnet |\n`,
+  `| ${new Date().toISOString().slice(0, 10)} | Created ${rollupId} (defi, zk, private, dedicated) with the ${circuitLabel}, ${encoding} encoding; layer ${created.layerId || "none"} | \`${res.transactionHash}\` | testnet |\n`,
 );
