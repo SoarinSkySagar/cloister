@@ -1,0 +1,29 @@
+{
+  "name": "@cloister/receipts",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build:web": "esbuild web/app.ts --bundle --format=esm --platform=browser --target=es2022 --minify --outfile=web/app.js",
+    "start": "pnpm build:web && tsx src/server.ts",
+    "cli": "tsx src/cli.ts",
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@cloister/common": "workspace:*",
+    "@qorechain/rdk": "0.9.0",
+    "@noble/hashes": "1.8.0",
+    "@qorechain/qoresign": "0.2.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  },
+  "exports": {
+    "./verdict": "./src/verdict.ts",
+    "./verify": "./src/verify.ts",
+    "./inclusion": "./src/inclusion.ts",
+    "./digest": "./src/digest.ts",
+    "./poseidon2": "./src/poseidon2.ts"
+  }
+}
