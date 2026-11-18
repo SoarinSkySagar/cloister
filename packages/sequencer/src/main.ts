@@ -35,6 +35,11 @@ const seq = new Sequencer(
   { rollupId, relayerIndex: Number(flag("--relayer") ?? 1), minFee, maxTxs: 4, proofLog: args.includes("--proof-log") },
   rdk, tx, operator,
 );
+// Crash recovery, then re-queue what was accepted before the restart.
+const recovered = await seq.recover();
+if (recovered) console.log(`[seq] recovered: ${recovered}`);
+const restored = seq.restore();
+if (restored.requeued || restored.dropped.length) console.log(`[seq] mempool: ${restored.requeued} re-queued, ${restored.dropped.length} dropped${restored.dropped.length ? " (" + restored.dropped.join("; ") + ")" : ""}`);
 // Keys of the configured identities whose accounts exist (genesis accounts, earlier registrations).
 seq.keystore.learn(seq.state(), (await allIdentities(rdk, env)).map((i) => i.publicKey));
 

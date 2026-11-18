@@ -13,7 +13,7 @@ import {
   zkPublicInputErrors, type RdkClient, type RdkTxClient,
 } from "@qorechain/rdk";
 import {
-  CHAIN_ID, NEW_ACCOUNT, REPO_ROOT, actionsOf, encodeBundle, formatQor, newAccountKey, nextFreeIndex,
+  CHAIN_ID, NEW_ACCOUNT, REPO_ROOT, actionsOf, decodeBundle, encodeBundle, frameTxFromHex, frameTxToHex, formatQor, newAccountKey, nextFreeIndex,
   payerOf, pkCommit, sighash, signatureErrors, structuralErrors, toLedgerTx, type FrameTx, type RollupState,
 } from "@cloister/common";
 
@@ -27,6 +27,13 @@ export interface SequencerConfig {
   minFee: bigint;         // uqor; lower fees are refused
   maxTxs: number;         // circuit v1: 4 per batch
   proofLog: boolean;      // append tx hashes to PROOF.md
+  setupDir?: string;      // override circuits/setup/<id> (tests)
+}
+
+/** The prover reports a fee its payer cannot cover as "tx <k>: fee: ..."; the tx is dropped and the batch retried. */
+export function feeFailure(stderr: string): { index: number; reason: string } | undefined {
+  const m = /tx (\d+): (fee: .*)/.exec(stderr);
+  return m ? { index: Number(m[1]), reason: m[2]!.trim() } : undefined;
 }
 
 export type TxStatus =
@@ -74,7 +81,7 @@ export class Sequencer {
     private operator: string,
   ) {
     this.setupRel = join("setup", cfg.rollupId);
-    this.setupDir = join(REPO_ROOT, "circuits", this.setupRel);
+    this.setupDir = cfg.setupDir ?? join(REPO_ROOT, "circuits", this.setupRel);
     this.keystore = new Keystore(join(this.setupDir, "keys.json"));
   }
 
@@ -116,6 +123,7 @@ export class Sequencer {
     if (payer !== tx.sender && !state.accounts.some((a) => a.index === payer)) errs.push(`sponsor #${payer} does not exist`);
     if (errs.length) throw new Error(errs.join("; "));
     this.mempool.push({ id, tx });
+    this.persist();
     this.statuses.set(id, { status: "queued", queuedAt: Date.now() });
     return id;
   }
@@ -178,16 +186,16 @@ export class Sequencer {
       const out = join(REPO_ROOT, "circuits", outRel);
       mkdirSync(out, { recursive: true });
       writeFileSync(join(out, "batch.json"), JSON.stringify({ txs: ledgerTxs }, null, 2));
+      writeFileSync(join(out, "bundle.bin"), bundle);   // lets recover() relearn the keys registered in this batch
       try {
         await run("go", ["run", "./cmd/ledger", "prove", "-dir", this.setupRel, "-batch", join(outRel, "batch.json"), "-data", sha, "-out", outRel],
           { cwd: join(REPO_ROOT, "circuits"), maxBuffer: 64 << 20 });
       } catch (e) {
         // A tx whose fee its payer cannot cover is dropped, and the batch retried.
-        const m = /tx (\d+): (fee: .*)/.exec(String((e as { stderr?: string }).stderr ?? e));
-        if (!m) throw e;
-        const k = Number(m[1]);
-        this.reject(picked[k]!.id, m[2]!.trim());
-        picked = picked.filter((_, i) => i !== k);
+        const f = feeFailure(String((e as { stderr?: string }).stderr ?? e));
+        if (!f) throw e;
+        this.reject(picked[f.index]!.id, f.reason);
+        picked = picked.filter((_, i) => i !== f.index);
         continue;
       }
       const result = JSON.parse(readFileSync(join(out, "result.json"), "utf8")) as {
@@ -220,17 +228,7 @@ export class Sequencer {
       copyFileSync(join(out, "next-state.json"), join(this.setupDir, "state.json"));
       this.log(`${rollupId} batch ${batchIndex}: sequencer service, ${picked.length} frame tx(s), ${withdrawals.length} withdrawal(s), circuit v1 proof verified on chain; status ${settled.status}`, `\`${res.transactionHash}\``);
 
-      // Record outcomes; learn keys of new accounts.
-      picked.forEach(({ id, tx }, i) => {
-        const account = assigned[i] ?? tx.sender;
-        const acts = actionsOf(tx);
-        const k = acts.findIndex((a) => a.kind === "register_key");
-        const reg = k >= 0 ? acts[k] : undefined;
-        if (reg?.kind === "register_key" && result.txs[i]?.applied[k]) this.keystore.set(account, reg.publicKey);
-        this.statuses.set(id, { status: "included", batch: batchIndex, account, applied: result.txs[i]!.applied, skipped: result.txs[i]!.skipped, submitTx: res.transactionHash });
-      });
-      const done = new Set(picked.map((p) => p.id));
-      this.mempool = this.mempool.filter((m) => !done.has(m.id));
+      this.record(picked, assigned, result.txs, batchIndex, res.transactionHash);
 
       if (tree) {
         if (settled.status !== "finalized") throw new Error("batch not finalized: withdrawals deferred");
@@ -247,9 +245,79 @@ export class Sequencer {
     }
   }
 
+
+  /** After a batch is accepted: remember outcomes and the keys of newly registered accounts. */
+  record(picked: { id: string; tx: FrameTx }[], assigned: (number | undefined)[], results: { applied: boolean[]; skipped?: string[] }[], batchIndex: number, submitTx: string) {
+    picked.forEach(({ id, tx }, i) => {
+      const account = assigned[i] ?? tx.sender;
+      // actionsOf builds new objects on every call, so locate the action by index, never by identity.
+      const acts = actionsOf(tx);
+      const k = acts.findIndex((a) => a.kind === "register_key");
+      const reg = k >= 0 ? acts[k] : undefined;
+      if (reg?.kind === "register_key" && results[i]?.applied[k]) this.keystore.set(account, reg.publicKey);
+      this.statuses.set(id, { status: "included", batch: batchIndex, account, applied: results[i]!.applied, skipped: results[i]!.skipped, submitTx });
+    });
+    const done = new Set(picked.map((p) => p.id));
+    this.mempool = this.mempool.filter((m) => !done.has(m.id));
+    this.persist();
+  }
+
+  private mempoolFile() { return join(this.setupDir, "mempool.json"); }
+  private persist() {
+    writeFileSync(this.mempoolFile(), JSON.stringify(this.mempool.map((m) => frameTxToHex(m.tx))));
+  }
+
+  /** Re-queue txs that were accepted before a restart (each is re-validated against the current state). */
+  restore(): { requeued: number; dropped: string[] } {
+    const dropped: string[] = [];
+    let requeued = 0;
+    if (!existsSync(this.mempoolFile())) return { requeued, dropped };
+    for (const h of JSON.parse(readFileSync(this.mempoolFile(), "utf8")) as string[]) {
+      try { this.submit(frameTxFromHex(h)); requeued++; } catch (e) { dropped.push((e as Error).message); }
+    }
+    this.persist();
+    return { requeued, dropped };
+  }
+
+  /**
+   * A crash between submitBatch and the local state update leaves the chain one batch ahead.
+   * If the prover's next-state for that batch matches the chain's root, adopt it and relearn the
+   * keys the batch registered. Anything else is refused: never guess at state.
+   */
+  async recover(): Promise<string | undefined> {
+    const { rollupId } = this.cfg;
+    const state = this.state();
+    const latest = await this.rdk.rest.getLatestBatch(rollupId).catch(() => undefined);
+    const chainNext = latest ? latest.batchIndex + 1 : 0;
+    if (chainNext === state.batches) return undefined;
+    if (latest && chainNext === state.batches + 1) {
+      const dir = join(this.setupDir, "..", "..", "build", `${rollupId}-b${state.batches}`);
+      const next = join(dir, "next-state.json");
+      if (existsSync(next)) {
+        const adopted = JSON.parse(readFileSync(next, "utf8")) as RollupState;
+        if (adopted.batches === chainNext && adopted.root === latest.stateRoot.toLowerCase().padStart(64, "0")) {
+          copyFileSync(next, join(this.setupDir, "state.json"));
+          const bundle = join(dir, "bundle.bin");
+          if (existsSync(bundle)) {
+            for (const tx of decodeBundle(new Uint8Array(readFileSync(bundle))).txs) {
+              for (const a of actionsOf(tx)) {
+                if (a.kind !== "register_key") continue;
+                const acct = adopted.accounts.find((x) => x.pk_commit === pkCommit(a.publicKey));
+                if (acct) this.keystore.set(acct.index, a.publicKey);
+              }
+            }
+          }
+          return `adopted batch ${state.batches} (chain was one ahead of local state)`;
+        }
+      }
+    }
+    throw new Error(`cannot recover: chain expects batch ${chainNext}, local state is at ${state.batches}`);
+  }
+
   private reject(id: string, reason: string) {
     this.statuses.set(id, { status: "rejected", reason });
     this.mempool = this.mempool.filter((m) => m.id !== id);
+    this.persist();
     console.log(`[seq] rejected ${id.slice(0, 12)}…: ${reason}`);
   }
 }

@@ -47,3 +47,5 @@ circuits/setup/cloister*/ccs.bin
 circuits/setup/cloister*/state.json
 circuits/setup/cloister*/keys.json
 packages/explorer/data.json
+packages/receipts/web/app.js
+circuits/setup/cloister*/mempool.json

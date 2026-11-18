@@ -33,6 +33,7 @@ Built with these open source libraries and kits:
 | [@qorechain/qoresign](https://github.com/qorechain/qoresign) | Apache-2.0 | Hybrid ML-DSA-87 signing |
 | [@qorechain/qoreseal](https://github.com/qorechain/qoreseal) | Apache-2.0 | ML-KEM-1024 sealing helpers |
 | [gnark](https://github.com/Consensys/gnark) | Apache-2.0 | Groth16 circuit and prover |
+| [esbuild](https://github.com/evanw/esbuild) | MIT | Bundles the receipt verifier page for the browser |
 
 ## License
 

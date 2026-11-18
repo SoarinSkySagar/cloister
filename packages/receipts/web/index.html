@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cloister Receipts</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23000'/%3E%3Cpath d='M7 25V13a9 9 0 0 1 18 0v12M12 25V14a4 4 0 0 1 8 0v11' fill='none' stroke='%23c6ff3d' stroke-width='2.4'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top"><div class="wrap bar">
+  <span class="brand"><svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><path d="M5 28V14a11 11 0 0 1 22 0v14M11 28V15a5 5 0 0 1 10 0v13" fill="none" stroke="currentColor" stroke-width="2.6"/></svg><b>Cloister</b><span>receipts</span></span>
+  <span class="net">testnet · qorechain-diana</span>
+</div></header>
+<main class="wrap">
+  <h1>Verify a settlement receipt</h1>
+  <p class="lede">A receipt is a claim. This page re-reads the rollup, the batch, the post-quantum anchor and the signing key from QoreChain and accepts the receipt only if all of it matches. Nothing in the receipt is trusted.</p>
+
+  <section class="panel">
+    <div class="hd"><h2>Receipt</h2></div>
+    <div class="body">
+      <label class="drop" id="drop">
+        <textarea id="text" spellcheck="false" placeholder="Paste a receipt (JSON), or drop a .json file here"></textarea>
+      </label>
+      <div class="row">
+        <button id="go" class="primary">Verify receipt</button>
+        <button id="clear" type="button">Clear</button>
+        <span class="or">or look up a batch</span>
+        <input id="rid" value="cloister-dev-2" aria-label="Rollup id" spellcheck="false">
+        <input id="bn" type="number" min="0" value="0" aria-label="Batch number">
+        <button id="lookup" type="button">Build and verify</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="result" hidden></section>
+
+  <section class="panel">
+    <div class="hd"><h2>Published receipts</h2><span class="muted" id="pubn"></span></div>
+    <div id="published" class="chips"></div>
+  </section>
+</main>
+<footer class="wrap foot"><span>Verification runs in your browser. The server only relays read-only chain queries.</span></footer>
+<script src="app.js" type="module"></script>
+</body>
+</html>

@@ -5,10 +5,14 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/main.ts",
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@cloister/common": "workspace:*",
     "@qorechain/rdk": "0.9.0"
+  },
+  "devDependencies": {
+    "@qorechain/qoresign": "0.2.0"
   }
 }

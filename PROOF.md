@@ -53,3 +53,5 @@ Every transaction that proves a feature works goes here, newest last.
 | 2026-11-18 | Settlement receipt for cloister-dev-2 batch 7 verified against live chain state (ML-DSA-87 anchor, key read from chain): valid | receipts/cloister-dev-2-7.json | testnet |
 | 2026-11-18 | Settlement receipt for cloister-dev-2 batch 8 verified against live chain state (ML-DSA-87 anchor, key read from chain): valid | receipts/cloister-dev-2-8.json | testnet |
 | 2026-11-18 | Settlement receipt for cloister-dev-2 batch 9 verified against live chain state (ML-DSA-87 anchor, key read from chain): valid | receipts/cloister-dev-2-9.json | testnet |
+| 2026-11-18 | cloister-dev-2 batch 10: sealed bundle of 1 signed frame tx(s) posted (12857 B, members only) | `85425DD7BC29918C1C1C897F039B42221E38895EEBEDA49C15118C5CAFF8DC22` | testnet |
+| 2026-11-18 | cloister-dev-2 batch 10: sequencer service, 1 frame tx(s), 0 withdrawal(s), circuit v1 proof verified on chain; status finalized | `509A5CFEC12176277429F70C39B6B8F41F7A179F6B910871BC370AC850B209EF` | testnet |

@@ -17,4 +17,11 @@ export CLOISTER_SEQUENCER_URL=http://127.0.0.1:8787     # for the wallet
 
 It listens on 127.0.0.1 only. The rollup state lives in `circuits/setup/<id>/state.json` and the ML-DSA keys of accounts in `keys.json` (both gitignored, members-only data). If a queued tx's fee can't be paid at batch time, the tx is rejected and the batch is retried without it.
 
+**Restart and crash behaviour** (tested live on `cloister-dev-2`, batch 10, and offline: `pnpm --filter @cloister/sequencer test`):
+
+- Accepted txs are saved to `mempool.json`. After a restart they are re-queued and re-validated against the current state; stale ones (for example a nonce that moved on) are dropped and logged.
+- A tx whose payer cannot cover the fee is rejected at batch time (`fee: insufficient balance`) and the batch is retried with the rest.
+- If a crash lands between `submitBatch` and the local state update, the chain is one batch ahead. On startup the sequencer adopts the prover's `next-state.json` for that batch only if its root equals the chain's batch root, and relearns the keys that batch registered from the saved bundle. Any other mismatch (chain two or more ahead, root differs) is refused with an error: it never guesses at state.
+- A crash between posting the data and `submitBatch` needs nothing: the next batch posts again.
+
 Tested on `cloister-dev-2` batches 3 and 4 (PROOF.md): txs sent through the API by the wallet, including refusals (fee below the minimum, duplicate, wrong nonce).
