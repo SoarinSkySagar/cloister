@@ -5,10 +5,14 @@
  *   whoami  --as <name> --id <rollup>      L1 address, pk_commit, rollup account, balances, nonce
  *   build   --as <name> --id <rollup> [--to <idx|name> --amount <x> [--asset qor|usd]]
  *           [--withdraw <qor> [--recipient qor1…]] [--register] [--sponsor <idx|name>]
- *           [--fee <qor>] [--atomic] [--expiry <batches>] --out tx.hex
- *   sign    --as <name> --in tx.hex        fill this identity's slot (sender or sponsor)
+ *           [--fee <qor>] [--atomic] [--expiry <batches>] [--not-before <batch>] --out tx.hex
+ *           multi-party: [--party <idx|name>]… co-signers; [--leg <from>:<to>:<amount>[:qor|usd]]… a transfer
+ *           debiting a party or yourself; [--withdraw-from <party>:<qor>[:<qor1… recipient>]]…
+ *   sign    --as <name> --in tx.hex        fill this identity's slot (sender, party or sponsor)
  *   inspect --in tx.hex [--id <rollup>]    decode, check structure and signatures
  *   status  --tx <id> --seq <url>          where a tx sent to the sequencer is (queued, included, rejected)
+ *   proof   --as <name> --tx <id> --seq <url> [--out proof.json]
+ *           the inclusion proof of a tx you sent or co-signed (spec/inclusion.md); a signed query, so only its parties get it
  *   send    --in tx.hex --id <rollup> [--seq <url>] [--via operator] [--envelope out.bin]
  *           with --seq (or CLOISTER_SEQUENCER_URL): hand the signed tx to the sequencer.
  *           seal to the rollup's members (ML-KEM-1024) and post. A dedicated rollup only accepts
@@ -27,12 +31,14 @@ import {
   ASSET, CHAIN_ID, NEW_ACCOUNT, REPO_ROOT, actionsOf, allIdentities, buildFrameTx, fillEnvValues, findByCommit,
   formatQor, frameTxFromHex, frameTxToHex, identity, isValidUserName, loadEnv, payerOf, sighash, signFrameTx,
   signatureErrors, structuralErrors, testnetClient, txClientFor, userEnvName, encodeFrameTx,
-  signAccountQuery, type Action, type FrameTx, type Identity, type RollupState, type StateAccount,
+  signAccountQuery, notBeforeOf, partiesOf, type Action, type FrameTx, type Identity, type RollupState, type StateAccount,
 } from "@cloister/common";
 
 const [cmd, ...args] = process.argv.slice(2);
 const flag = (n: string) => { const i = args.indexOf(n); return i === -1 ? undefined : args[i + 1]; };
 const has = (n: string) => args.includes(n);
+/** Every value of a repeatable flag: --party a --party b. */
+const flags = (n: string) => args.flatMap((a, i) => (a === n && args[i + 1] !== undefined ? [args[i + 1]!] : []));
 const need = (n: string) => { const v = flag(n); if (!v) throw new Error(`${n} is required`); return v; };
 const rdk = testnetClient();
 const env = loadEnv();
@@ -93,9 +99,15 @@ function describe(tx: FrameTx) {
   console.log(`  sender ${who(tx.sender)}  nonce ${tx.nonce}  expiry batch ${tx.expiryBatch}`);
   const payer = payerOf(tx);
   console.log(`  payer  ${who(payer)}${payer !== tx.sender ? " (sponsor)" : ""}  fee ${tx.feeAsset === ASSET.QOR ? formatQor(tx.maxFee) : fmtUsd(tx.maxFee)}`);
+  const parties = partiesOf(tx);
+  if (parties.length) console.log(`  co-signers ${parties.map((p) => `#${p}`).join(", ")}`);
+  if (notBeforeOf(tx) > 0n) console.log(`  not valid before batch ${notBeforeOf(tx)}`);
   for (const a of actionsOf(tx)) {
     const at = a.atomic ? " [atomic]" : "";
-    if (a.kind === "transfer") console.log(`  transfer ${a.asset === ASSET.QOR ? formatQor(a.amount) : fmtUsd(a.amount)} -> #${a.to}${at}`);
+    const amt = (asset: number, v: bigint) => (asset === ASSET.QOR ? formatQor(v) : fmtUsd(v));
+    if (a.kind === "transfer") console.log(`  transfer ${amt(a.asset, a.amount)} -> #${a.to}${at}`);
+    if (a.kind === "transfer_from") console.log(`  transfer ${amt(a.asset, a.amount)} from #${a.from} -> #${a.to}${at}`);
+    if (a.kind === "withdraw_from") console.log(`  withdraw ${formatQor(a.amount)} from #${a.from} -> L1 ${a.recipient}${at}`);
     if (a.kind === "withdraw") console.log(`  withdraw ${formatQor(a.amount)} -> L1 ${a.recipient}${at}`);
     if (a.kind === "register_key") console.log(`  register_key ML-DSA-87 (${a.publicKey.length} B)${at}`);
   }
@@ -153,7 +165,22 @@ switch (cmd) {
     if (flag("--withdraw")) {
       actions.push({ kind: "withdraw", recipient: flag("--recipient") ?? me.address, amount: units(need("--withdraw")), atomic });
     }
-    if (!actions.length) throw new Error("nothing to do: give --to/--amount, --withdraw or --register");
+    const parties: number[] = [];
+    for (const p of flags("--party")) parties.push(await accountIndex(p, state));
+    for (const leg of flags("--leg")) {
+      const [from, to, amount, asset = "qor"] = leg.split(":");
+      if (!from || !to || !amount) throw new Error(`--leg ${leg}: expected <from>:<to>:<amount>[:qor|usd]`);
+      actions.push({ kind: "transfer_from", from: await accountIndex(from, state), to: await accountIndex(to, state),
+        asset: asset === "usd" ? ASSET.USD : ASSET.QOR, amount: units(amount), atomic });
+    }
+    for (const w of flags("--withdraw-from")) {
+      const [from, amount, recipient] = w.split(":");
+      if (!from || !amount) throw new Error(`--withdraw-from ${w}: expected <party>:<qor>[:<qor1… recipient>]`);
+      const rcpt = recipient ?? (/^\d+$/.test(from) ? undefined : (await identity(rdk, from, env)).address);
+      if (!rcpt) throw new Error(`--withdraw-from ${w}: give a recipient for an account given by index`);
+      actions.push({ kind: "withdraw_from", from: await accountIndex(from, state), recipient: rcpt, amount: units(amount), atomic });
+    }
+    if (!actions.length) throw new Error("nothing to do: give --to/--amount, --withdraw, --leg, --withdraw-from or --register");
     const sponsor = flag("--sponsor");
     const latest = await rdk.rest.getLatestBatch(rollupId).catch(() => undefined);
     const tx = buildFrameTx({
@@ -163,13 +190,14 @@ switch (cmd) {
       expiryBatch: BigInt((latest ? latest.batchIndex + 1 : 0) + Number(flag("--expiry") ?? 50)),
       feeAsset: ASSET.QOR, maxFee: units(flag("--fee") ?? "0"),
       payer: sponsor ? await accountIndex(sponsor, state) : undefined,
+      parties, notBefore: flag("--not-before") ? BigInt(need("--not-before")) : undefined,
       actions,
     });
     const errs = structuralErrors(tx, { chainId: CHAIN_ID, rollupId });
     if (errs.length) throw new Error(`invalid tx: ${errs.join("; ")}`);
     writeTx(need("--out"), tx);
     describe(tx);
-    console.log(`unsigned -> ${flag("--out")}  (${encodeFrameTx(tx).length} B); next: sign --as ${me.name}${tx.sigs.length > 1 ? ", then the sponsor signs" : ""}`);
+    console.log(`unsigned -> ${flag("--out")}  (${encodeFrameTx(tx).length} B); next: sign --as ${me.name}${tx.sigs.length > 1 ? `, then ${tx.sigs.slice(1).map((x) => `#${x.signer}`).join(", ")} sign` : ""}`);
     break;
   }
   case "sign": {
@@ -185,10 +213,11 @@ switch (cmd) {
       const acct = (await myAccount(me, tx.rollupId)).account;
       if (acct && tx.sigs.some((s) => s.signer === acct.index)) slot = acct.index;
     }
-    if (slot === undefined) throw new Error(`${me.name} is neither the sender nor the sponsor of this tx`);
+    if (slot === undefined) throw new Error(`${me.name} is neither the sender, a party nor the sponsor of this tx`);
     const signed = signFrameTx(tx, slot, me.secretKey);
     writeTx(path, signed);
-    console.log(`${me.name} signed as ${slot === tx.sender ? "sender" : "sponsor"} (ML-DSA-87, ${signed.sigs.find((s) => s.signer === slot)!.signature.length} B) -> ${path}`);
+    const role = slot === tx.sender ? "sender" : partiesOf(tx).includes(slot) ? "party" : "sponsor";
+    console.log(`${me.name} signed as ${role} (ML-DSA-87, ${signed.sigs.find((s) => s.signer === slot)!.signature.length} B) -> ${path}`);
     break;
   }
   case "inspect": {
@@ -233,6 +262,17 @@ switch (cmd) {
     if (res.code !== 0) throw new Error(`post failed: ${res.rawLog}`);
     const inbox = await rdk.rest.getInbox(rollupId);
     console.log(`posted by ${poster}: ${res.transactionHash} (inbox seq ${inbox.headSequence})`);
+    break;
+  }
+  case "proof": {
+    const me = await identity(rdk, need("--as"), env);
+    const rollupId = flag("--id") ?? (await seqCall("/status")).rollup_id;
+    const p = await seqCall("/proof", { method: "POST", body: { query: signAccountQuery(rollupId, me.publicKey, me.secretKey), tx: need("--tx") } });
+    const out = flag("--out");
+    if (out) writeFileSync(out, JSON.stringify(p, null, 2) + "\n");
+    const r = p.record;
+    console.log(`inclusion proof: ${p.rollupId} batch ${p.batchIndex}, slot ${p.txIndex}; sender #${r.sender}${r.parties.length ? `, co-signers ${r.parties.map((x: number) => `#${x}`).join(", ")}` : ""}`);
+    console.log(`  ${p.txPath.length + p.logPath.length} hashes${out ? ` -> ${out}` : ""}; verify it against the batch's receipt with the receipts tool`);
     break;
   }
   case "status": {

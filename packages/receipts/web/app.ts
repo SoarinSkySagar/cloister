@@ -1,6 +1,7 @@
 import { buildSettlementReceipt, createRdkClient, type SettlementReceipt } from "@qorechain/rdk";
 import { parseReceipt, verifyReceipt, checkVerdicts, summarize, type CoSignature, type ReceiptVerdict } from "../src/verify.ts";
 import { parseVerdicts } from "../src/verdict.ts";
+import { parseInclusion, verifyInclusion, type InclusionProof, type InclusionVerdict } from "../src/inclusion.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -58,7 +59,47 @@ async function loadCo(r: SettlementReceipt): Promise<CoSignature[] | undefined> 
   } catch { return undefined; }
 }
 
+const qor = (v: string, asset = 0) => `${(Number(v) / 1e6).toLocaleString("en-US", { maximumFractionDigits: 6 })} ${asset ? "USD" : "QOR"}`;
+
+function inclusionHtml(p: InclusionProof, v: InclusionVerdict, anchor?: ReceiptVerdict): string {
+  const r = p.record;
+  const legs = r.moves.map((m, i) => {
+    if (m.code === 0) return "";
+    const what = m.code === 1 ? `#${m.from} → #${m.to}: ${qor(m.amount, m.asset)}` : m.code === 2 ? `#${m.from} withdraws ${qor(m.amount)} to an L1 address bound by <span class="mono">${esc(m.aux.slice(0, 12))}…</span>` : `#${m.from} registers a key`;
+    return `<tr><td class="muted">${i === 0 ? "fee" : "action " + i}</td><td class="mono">${what}</td></tr>`;
+  }).join("");
+  const ok = v.valid;
+  const head = ok ? `<div class="verdict ok"><div class="mark">✓</div><div><h3>Transaction included</h3><p>Slot ${p.txIndex} of ${esc(p.rollupId)} batch ${p.batchIndex}: the batch's validity proof executed exactly this record.</p></div></div>`
+    : `<div class="verdict bad"><div class="mark">${v.unverifiable ? "?" : "✕"}</div><div><h3>${v.unverifiable ? "Could not verify" : "Not a valid inclusion proof"}</h3><p>${esc(v.problems.join("; "))}</p></div></div>`;
+  return `${head}
+    <div class="kv">
+      <div>Sender</div><div class="mono">#${r.sender} · nonce ${esc(r.nonceBefore)}</div>
+      <div>Co-signers</div><div class="mono">${r.parties.length ? r.parties.map((x) => "#" + x).join(", ") : "none"}</div>
+      <div>Valid in batches</div><div class="mono">${esc(r.notBeforeBatch)} – ${esc(r.expiryBatch)}</div>
+      <div>State root reached</div><div class="mono">${esc(v.proofRoot ?? "")}</div>
+      <div>Chain's state root</div><div class="mono">${esc(v.chainRoot ?? "unavailable")}</div>
+      ${anchor ? `<div>Batch anchor</div><div>${anchor.valid ? '<span class="pill ok">ML-DSA-87 anchor verified</span>' : '<span class="pill bad">anchor not verified</span>'} <span class="muted">settlement receipt checked against the chain</span></div>` : ""}
+    </div>
+    <table><thead><tr><th>Move</th><th>As executed</th></tr></thead><tbody>${legs || '<tr><td colspan="2" class="muted">no applied moves: every action was skipped</td></tr>'}</tbody></table>
+    <div class="note"><b>What this proves:</b> the batch's validity proof executed exactly this record, as batch ${p.batchIndex}, with these applied moves and co-signers, and the chain accepted that batch. <b>What it does not prove:</b> that any ML-DSA signature on the transaction was valid (member watchtowers check that) or anything else in the batch. Sharing this proof shows this one transaction and nothing else.</div>`;
+}
+
+async function runInclusion(proof: InclusionProof) {
+  const box = $("result");
+  box.hidden = false;
+  box.innerHTML = `<div class="note muted">Checking the proof against the chain…</div>`;
+  const v = await verifyInclusion(proof, client);
+  let anchor: ReceiptVerdict | undefined;
+  if (v.valid) {
+    try { anchor = await verifyReceipt(await buildSettlementReceipt(client, proof.rollupId, proof.batchIndex), client); } catch { anchor = undefined; }
+  }
+  box.innerHTML = inclusionHtml(proof, v, anchor);
+  box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
 async function run(text: string) {
+  const ip = parseInclusion(text);
+  if ("proof" in ip && "txIndex" in ip.proof && Array.isArray(ip.proof.txPath)) return runInclusion(ip.proof);
   const p = parseReceipt(text);
   if ("error" in p) return render(undefined, { valid: false, mode: "", checks: [] }, p.error);
   $("go").setAttribute("disabled", "");

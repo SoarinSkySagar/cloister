@@ -29,3 +29,18 @@ test("a non-member key cannot decrypt", () => {
     keyOf: () => undefined, batch: { batch_index: "7", tx_count: "1", state_root: "00".repeat(32), status: "finalized", data_hash: createHash("sha256").update(e).digest("hex") } });
   assert.ok(r.findings.some((f) => f.check === "decrypt" && !f.ok));
 });
+
+test("a tx included outside the window it signed fails the window check", () => {
+  const mkw = (expiryBatch: bigint, notBefore: bigint) => signFrameTx(buildFrameTx({ chainId: "qorechain-diana", rollupId: "cloister-dev-2", sender: 5, nonce: 1n,
+    expiryBatch, maxFee: 10_000n, notBefore, actions: [{ kind: "transfer", to: 6, asset: ASSET.QOR, amount: 1n, atomic: false }] }), 5, alice.secretKey);
+  const run = (txs: ReturnType<typeof mkw>[]) => {
+    const e = sealEnvelope({ chainId: "qorechain-diana", rollupId: "cloister-dev-2", epoch: 1, recipients: [{ member, encapsulationKey: kem.publicKey }], plaintext: encodeBundle(7, txs) });
+    return checkBatch({ rollupId: "cloister-dev-2", member, envelope: e, decapsulationKey: kem.secretKey, keyOf: (i) => (i === 5 ? alice.publicKey : undefined),
+      batch: { batch_index: "7", tx_count: String(txs.length), state_root: "00".repeat(32), status: "finalized", data_hash: createHash("sha256").update(e).digest("hex") } })
+      .findings.filter((f) => !f.ok).map((f) => f.check);
+  };
+  assert.deepEqual(run([mkw(7n, 7n)]), [], "exactly on both bounds is fine");
+  assert.deepEqual(run([mkw(6n, 0n)]), ["window"], "expired one batch ago");
+  assert.deepEqual(run([mkw(99n, 8n)]), ["window"], "included one batch too early");
+  assert.deepEqual(run([mkw(99n, 0n), mkw(5n, 0n)]), ["window"], "one bad tx in a batch is enough");
+});

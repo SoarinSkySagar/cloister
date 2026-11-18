@@ -9,16 +9,20 @@ import { BLS12_381_SCALAR_MODULUS } from "@qorechain/rdk";
 
 export const FRAME_TX_VERSION = 1;
 export const SIGHASH_DOMAIN = "cloister/frametx/v1";
-export const MODE = { VERIFY_SENDER: 1, VERIFY_PAYER: 2, ACTION: 3 } as const;
-export const KIND = { transfer: 0x01, withdraw: 0x02, register_key: 0x03 } as const;
+export const MODE = { VERIFY_SENDER: 1, VERIFY_PAYER: 2, ACTION: 3, VERIFY_PARTY: 4, GUARD: 5 } as const;
+export const KIND = { transfer: 0x01, withdraw: 0x02, register_key: 0x03, transfer_from: 0x04, withdraw_from: 0x05 } as const;
 export const FLAG_ATOMIC = 0x04;
 export const SCHEME_ML_DSA_87 = 1;
 export const ML_DSA_87_SIG_LEN = 4627;
 export const ML_DSA_87_PK_LEN = 2592;
 /** `sender` of a tx that creates its account; the sequencer assigns the index. */
 export const NEW_ACCOUNT = 0xffffffff;
-/** Circuit v1: 1 fee move + 2 actions (circuits/ledger, spec/batch.md). */
-export const MAX_ACTIONS = 2;
+/** Circuit: 1 fee move + 3 actions (circuits/ledger, spec/batch.md). */
+export const MAX_ACTIONS = 3;
+/** Co-signers per tx (spec/frame-tx.md, multi-party). */
+export const MAX_PARTIES = 3;
+/** Account indexes are below this: the last leaf of the depth-16 state tree is the reserved log leaf (spec/state.md). */
+export const ACCOUNT_LIMIT = 65535;
 export const RECIPIENT_LEN = 42;
 export const ASSET = { QOR: 0, USD: 1 } as const;
 
@@ -40,7 +44,10 @@ export interface FrameTx {
 export type Action =
   | { kind: "transfer"; to: number; asset: number; amount: bigint; atomic: boolean }
   | { kind: "withdraw"; recipient: string; amount: bigint; atomic: boolean }
-  | { kind: "register_key"; publicKey: Uint8Array; atomic: boolean };
+  | { kind: "register_key"; publicKey: Uint8Array; atomic: boolean }
+  /** Like transfer / withdraw, but debits `from`, which must be the sender or a VERIFY_PARTY account. */
+  | { kind: "transfer_from"; from: number; to: number; asset: number; amount: bigint; atomic: boolean }
+  | { kind: "withdraw_from"; from: number; recipient: string; amount: bigint; atomic: boolean };
 
 // ---- byte helpers ----
 
@@ -117,11 +124,11 @@ export function decodeFrameTx(bytes: Uint8Array): FrameTx {
   const feeAsset = r.u8();
   const maxFee = r.u64();
   const nf = r.u8();
-  if (nf < 1 || nf > 8) throw new Error(`frame tx: ${nf} frames`);
+  if (nf < 1 || nf > 12) throw new Error(`frame tx: ${nf} frames`);
   const frames: Frame[] = [];
   for (let i = 0; i < nf; i++) frames.push({ mode: r.u8(), flags: r.u8(), kind: r.u8(), params: r.lp(4096) });
   const ns = r.u8();
-  if (ns < 1 || ns > 2) throw new Error(`frame tx: ${ns} signatures`);
+  if (ns < 1 || ns > 5) throw new Error(`frame tx: ${ns} signatures`);
   const sigs: Sig[] = [];
   for (let i = 0; i < ns; i++) sigs.push({ scheme: r.u8(), signer: r.u32(), signature: r.lp(ML_DSA_87_SIG_LEN) });
   r.done();
@@ -134,6 +141,11 @@ export const verifySenderFrame = (): Frame => ({ mode: MODE.VERIFY_SENDER, flags
 export const verifyPayerFrame = (payer: number): Frame =>
   ({ mode: MODE.VERIFY_PAYER, flags: 0, kind: 0, params: new Writer().u32(payer).bytes() });
 
+export const verifyPartyFrame = (party: number): Frame =>
+  ({ mode: MODE.VERIFY_PARTY, flags: 0, kind: 0, params: new Writer().u32(party).bytes() });
+export const guardFrame = (notBeforeBatch: bigint): Frame =>
+  ({ mode: MODE.GUARD, flags: 0, kind: 0, params: new Writer().u64(notBeforeBatch).bytes() });
+
 export function actionFrame(a: Action): Frame {
   const flags = a.atomic ? FLAG_ATOMIC : 0;
   switch (a.kind) {
@@ -143,6 +155,10 @@ export function actionFrame(a: Action): Frame {
       return { mode: MODE.ACTION, flags, kind: KIND.withdraw, params: new Writer().lp(te.encode(a.recipient)).u64(a.amount).bytes() };
     case "register_key":
       return { mode: MODE.ACTION, flags, kind: KIND.register_key, params: new Writer().lp(a.publicKey).bytes() };
+    case "transfer_from":
+      return { mode: MODE.ACTION, flags, kind: KIND.transfer_from, params: new Writer().u32(a.from).u32(a.to).u8(a.asset).u64(a.amount).bytes() };
+    case "withdraw_from":
+      return { mode: MODE.ACTION, flags, kind: KIND.withdraw_from, params: new Writer().u32(a.from).lp(te.encode(a.recipient)).u64(a.amount).bytes() };
   }
 }
 
@@ -155,6 +171,8 @@ export function parseAction(f: Frame): Action {
     case KIND.transfer: a = { kind: "transfer", to: r.u32(), asset: r.u8(), amount: r.u64(), atomic }; break;
     case KIND.withdraw: a = { kind: "withdraw", recipient: td.decode(r.lp(128)), amount: r.u64(), atomic }; break;
     case KIND.register_key: a = { kind: "register_key", publicKey: r.lp(ML_DSA_87_PK_LEN), atomic }; break;
+    case KIND.transfer_from: a = { kind: "transfer_from", from: r.u32(), to: r.u32(), asset: r.u8(), amount: r.u64(), atomic }; break;
+    case KIND.withdraw_from: a = { kind: "withdraw_from", from: r.u32(), recipient: td.decode(r.lp(128)), amount: r.u64(), atomic }; break;
     default: throw new Error(`unknown action kind 0x${f.kind.toString(16)}`);
   }
   r.done();
@@ -164,6 +182,31 @@ export function parseAction(f: Frame): Action {
 export function payerOf(tx: FrameTx): number {
   const f = tx.frames.find((x) => x.mode === MODE.VERIFY_PAYER);
   return f ? new Reader(f.params).u32() : tx.sender;
+}
+
+/** The VERIFY_PARTY accounts, in frame order. */
+export const partiesOf = (tx: FrameTx): number[] =>
+  tx.frames.filter((f) => f.mode === MODE.VERIFY_PARTY).map((f) => new Reader(f.params).u32());
+
+/** The GUARD frame's not_before_batch (0 when absent). */
+export function notBeforeOf(tx: FrameTx): bigint {
+  const g = tx.frames.find((f) => f.mode === MODE.GUARD);
+  return g ? new Reader(g.params).u64() : 0n;
+}
+
+/** The account an action debits. */
+export const fromOf = (a: Action, sender: number): number =>
+  a.kind === "transfer_from" || a.kind === "withdraw_from" ? a.from : sender;
+
+/**
+ * The accounts that must sign, in signature order: the sender, the parties in frame order, then the
+ * payer unless it is already one of them.
+ */
+export function signersOf(tx: FrameTx): number[] {
+  const out = [tx.sender, ...partiesOf(tx)];
+  const payer = payerOf(tx);
+  if (!out.includes(payer)) out.push(payer);
+  return out;
 }
 
 export const actionsOf = (tx: FrameTx): Action[] => tx.frames.filter((f) => f.mode === MODE.ACTION).map(parseAction);
@@ -186,19 +229,26 @@ export interface BuildArgs {
   feeAsset?: number;
   maxFee?: bigint;
   payer?: number; // sponsor; omit for self-paid
+  parties?: number[]; // co-signers: actions may debit them (transfer_from / withdraw_from)
+  notBefore?: bigint; // GUARD: not valid before this batch index
   actions: Action[];
 }
 
 /** An unsigned tx with zeroed signature slots of the final length, so the sighash is fixed. */
 export function buildFrameTx(a: BuildArgs): FrameTx {
   const sponsored = a.payer !== undefined && a.payer !== a.sender;
-  const frames = [verifySenderFrame(), ...(sponsored ? [verifyPayerFrame(a.payer!)] : []), ...a.actions.map(actionFrame)];
+  const parties = a.parties ?? [];
+  // canonical order: sender, parties, payer, guard, actions (one encoding per meaning)
+  const frames = [
+    verifySenderFrame(), ...parties.map(verifyPartyFrame), ...(sponsored ? [verifyPayerFrame(a.payer!)] : []),
+    ...(a.notBefore ? [guardFrame(a.notBefore)] : []), ...a.actions.map(actionFrame),
+  ];
   const slot = (signer: number): Sig => ({ scheme: SCHEME_ML_DSA_87, signer, signature: new Uint8Array(ML_DSA_87_SIG_LEN) });
-  return {
+  const tx: FrameTx = {
     version: FRAME_TX_VERSION, chainId: a.chainId, rollupId: a.rollupId, sender: a.sender, nonce: a.nonce,
-    expiryBatch: a.expiryBatch, feeAsset: a.feeAsset ?? ASSET.QOR, maxFee: a.maxFee ?? 0n, frames,
-    sigs: [slot(a.sender), ...(sponsored ? [slot(a.payer!)] : [])],
+    expiryBatch: a.expiryBatch, feeAsset: a.feeAsset ?? ASSET.QOR, maxFee: a.maxFee ?? 0n, frames, sigs: [],
   };
+  return { ...tx, sigs: signersOf(tx).map(slot) };
 }
 
 /** Fill the signature slot of `signer` (the sender, or the sponsor). Deterministic ML-DSA-87. */
@@ -213,6 +263,10 @@ export function signFrameTx(tx: FrameTx, signer: number, secretKey: Uint8Array):
 
 // ---- validation (spec/frame-tx.md, rules 1-3) ----
 
+const RANK: Record<number, number> = {
+  [MODE.VERIFY_SENDER]: 0, [MODE.VERIFY_PARTY]: 1, [MODE.VERIFY_PAYER]: 2, [MODE.GUARD]: 3, [MODE.ACTION]: 4,
+};
+
 export function structuralErrors(tx: FrameTx, expect: { chainId: string; rollupId: string }): string[] {
   const e: string[] = [];
   if (tx.version !== FRAME_TX_VERSION) e.push("version");
@@ -220,34 +274,58 @@ export function structuralErrors(tx: FrameTx, expect: { chainId: string; rollupI
   if (tx.rollupId !== expect.rollupId) e.push("rollup_id mismatch");
   if (tx.feeAsset > 1) e.push("unknown fee asset");
   const modes = tx.frames.map((f) => f.mode);
-  if (modes.filter((m) => m === MODE.VERIFY_SENDER).length !== 1) e.push("need exactly one VERIFY_SENDER frame");
-  if (modes.filter((m) => m === MODE.VERIFY_PAYER).length > 1) e.push("at most one VERIFY_PAYER frame");
-  const firstAction = modes.indexOf(MODE.ACTION);
-  if (firstAction < 0) e.push("no ACTION frame");
-  else if (modes.slice(firstAction).some((m) => m !== MODE.ACTION)) e.push("VERIFY frames must come before ACTION frames");
-  if (modes.some((m) => m < 1 || m > 3)) e.push("unknown frame mode");
+  const count = (m: number) => modes.filter((x) => x === m).length;
+  if (modes.some((m) => !(m in RANK))) e.push("unknown frame mode");
+  if (count(MODE.VERIFY_SENDER) !== 1) e.push("need exactly one VERIFY_SENDER frame");
+  if (count(MODE.VERIFY_PAYER) > 1) e.push("at most one VERIFY_PAYER frame");
+  if (count(MODE.VERIFY_PARTY) > MAX_PARTIES) e.push(`at most ${MAX_PARTIES} VERIFY_PARTY frames`);
+  if (count(MODE.GUARD) > 1) e.push("at most one GUARD frame");
+  if (count(MODE.ACTION) < 1) e.push("no ACTION frame");
+  // one canonical order: sender, parties, payer, guard, actions
+  const ranks = modes.map((m) => RANK[m] ?? 99);
+  if (ranks.some((r, i) => i > 0 && r < ranks[i - 1]!)) e.push("frames must be ordered: sender, parties, payer, guard, actions");
   for (const f of tx.frames) {
-    if (f.mode !== MODE.ACTION && (f.kind !== 0 || f.flags !== 0)) e.push("VERIFY frames carry no kind or flags");
+    if (f.mode !== MODE.ACTION && (f.kind !== 0 || f.flags !== 0)) e.push("VERIFY and GUARD frames carry no kind or flags");
     if (f.mode === MODE.VERIFY_SENDER && f.params.length !== 0) e.push("VERIFY_SENDER has params");
     if (f.mode === MODE.VERIFY_PAYER && f.params.length !== 4) e.push("VERIFY_PAYER params must be a u32");
+    if (f.mode === MODE.VERIFY_PARTY && f.params.length !== 4) e.push("VERIFY_PARTY params must be a u32");
+    if (f.mode === MODE.GUARD && f.params.length !== 8) e.push("GUARD params must be a u64");
     if (f.mode === MODE.ACTION && (f.flags & ~FLAG_ATOMIC) !== 0) e.push("unknown frame flags");
   }
   let actions: Action[] = [];
   try { actions = actionsOf(tx); } catch (err) { e.push(`bad action: ${(err as Error).message}`); }
-  if (actions.length > MAX_ACTIONS) e.push(`at most ${MAX_ACTIONS} actions in circuit v1`);
+  if (actions.length > MAX_ACTIONS) e.push(`at most ${MAX_ACTIONS} actions`);
+
+  // parties: distinct, not the sender, valid accounts
+  let parties: number[] = [];
+  try { parties = partiesOf(tx); } catch { /* reported above */ }
+  if (new Set(parties).size !== parties.length) e.push("parties must be distinct");
+  if (parties.includes(tx.sender)) e.push("a party cannot be the sender");
+  if (parties.some((p) => p >= ACCOUNT_LIMIT)) e.push("party is not a valid account index");
+  if (tx.sender !== NEW_ACCOUNT && tx.sender >= ACCOUNT_LIMIT) e.push("sender is not a valid account index");
+
+  const payer = (() => { try { return payerOf(tx); } catch { return tx.sender; } })();
+  if (payer !== NEW_ACCOUNT && payer >= ACCOUNT_LIMIT) e.push("payer is not a valid account index");
+  const authorised = new Set([tx.sender, ...parties]);
   for (const a of actions) {
-    if (a.kind === "transfer" && a.asset > 1) e.push("unknown asset");
-    if (a.kind === "withdraw" && (a.recipient.length !== RECIPIENT_LEN || !a.recipient.startsWith("qor1"))) {
+    if ((a.kind === "transfer" || a.kind === "transfer_from") && a.asset > 1) e.push("unknown asset");
+    if ((a.kind === "transfer" || a.kind === "transfer_from") && a.to >= ACCOUNT_LIMIT) e.push("transfer to an invalid account index");
+    if ((a.kind === "withdraw" || a.kind === "withdraw_from") && (a.recipient.length !== RECIPIENT_LEN || !a.recipient.startsWith("qor1"))) {
       e.push("withdraw recipient must be a 42-character qor1 address");
     }
     if (a.kind === "register_key" && a.publicKey.length !== ML_DSA_87_PK_LEN) e.push("register_key needs a 2592-byte ML-DSA-87 key");
+    if ((a.kind === "transfer_from" || a.kind === "withdraw_from") && !authorised.has(a.from)) {
+      e.push(`${a.kind} debits account ${a.from}, which is neither the sender nor a party`);
+    }
   }
   if (tx.sender === NEW_ACCOUNT) {
     if (actions[0]?.kind !== "register_key") e.push("a new account's first action must be register_key");
     if (tx.nonce !== 0n) e.push("a new account's nonce is 0");
+    if (parties.length) e.push("a new account's tx has no parties");
+    if (actions.some((a) => a.kind === "transfer_from" || a.kind === "withdraw_from")) e.push("a new account's tx cannot use transfer_from or withdraw_from");
   }
-  const payer = (() => { try { return payerOf(tx); } catch { return tx.sender; } })();
-  const want = payer === tx.sender ? [tx.sender] : [tx.sender, payer];
+
+  const want = (() => { try { return signersOf(tx); } catch { return [tx.sender]; } })();
   const got = tx.sigs.map((s) => s.signer);
   if (got.length !== want.length || want.some((w, i) => got[i] !== w)) e.push(`signatures must be by [${want.join(", ")}] in that order`);
   for (const s of tx.sigs) {
@@ -283,14 +361,20 @@ export function pkCommit(publicKey: Uint8Array): string {
 
 export interface LedgerTxIn {
   sender: number; payer: number; relayer: number; fee_asset: number; fee: number;
+  /** VERIFY_PARTY accounts. */
+  parties?: number[];
+  /** Last batch index the tx is valid in, and the first (GUARD); capped at 2^53-1 (see toLedgerTx). */
+  expiry?: number; not_before?: number;
   actions: Array<
-    | { kind: "transfer"; to: number; asset: number; amount: number; atomic?: boolean }
-    | { kind: "withdraw"; recipient: string; amount: number; atomic?: boolean }
+    | { kind: "transfer"; from?: number; to: number; asset: number; amount: number; atomic?: boolean }
+    | { kind: "withdraw"; from?: number; recipient: string; amount: number; atomic?: boolean }
     | { kind: "register_key"; pk_commit: string; atomic?: boolean }
   >;
 }
 
 const num = (v: bigint) => { if (v > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("amount too large for JSON"); return Number(v); };
+/** Batch indexes beyond 2^53-1 cannot be reached, so a larger bound means "never" (not_before) or "no expiry". */
+const capBatch = (v: bigint) => Number(v > BigInt(Number.MAX_SAFE_INTEGER) ? BigInt(Number.MAX_SAFE_INTEGER) : v);
 
 /**
  * Map a validated, signature-checked tx to the prover input. The fee charged is
@@ -301,13 +385,19 @@ export function toLedgerTx(tx: FrameTx, opts: { relayer: number; senderIndex?: n
   const sender = tx.sender === NEW_ACCOUNT ? opts.senderIndex : tx.sender;
   if (sender === undefined) throw new Error("new account needs an assigned index");
   const payer = payerOf(tx) === NEW_ACCOUNT ? sender : payerOf(tx);
+  const parties = partiesOf(tx);
+  const notBefore = notBeforeOf(tx);
   return {
     sender, payer, relayer: opts.relayer, fee_asset: tx.feeAsset, fee: num(tx.maxFee),
+    ...(parties.length ? { parties } : {}),
+    expiry: capBatch(tx.expiryBatch), ...(notBefore ? { not_before: capBatch(notBefore) } : {}),
     actions: actionsOf(tx).map((a) => {
       const atomic = a.atomic || undefined;
       switch (a.kind) {
         case "transfer": return { kind: "transfer", to: a.to, asset: a.asset, amount: num(a.amount), atomic };
         case "withdraw": return { kind: "withdraw", recipient: a.recipient, amount: num(a.amount), atomic };
+        case "transfer_from": return { kind: "transfer", from: a.from, to: a.to, asset: a.asset, amount: num(a.amount), atomic };
+        case "withdraw_from": return { kind: "withdraw", from: a.from, recipient: a.recipient, amount: num(a.amount), atomic };
         case "register_key": return { kind: "register_key", pk_commit: pkCommit(a.publicKey), atomic };
       }
     }),
@@ -344,9 +434,13 @@ export function decodeBundle(bytes: Uint8Array): { batchIndex: number; txs: Fram
   return { batchIndex, txs };
 }
 
-/** Sequencer rule: a new account gets the lowest index above every account in use. */
+/**
+ * Sequencer rule: a new account gets the lowest index above every account in use. The last leaf of the
+ * tree is the reserved log leaf, so the rollup is full at ACCOUNT_LIMIT accounts.
+ */
 export function nextFreeIndex(used: Iterable<number>): number {
   let max = -1;
-  for (const i of used) max = Math.max(max, i);
+  for (const i of used) if (i < ACCOUNT_LIMIT) max = Math.max(max, i);
+  if (max + 1 >= ACCOUNT_LIMIT) throw new Error("the rollup has no free account index");
   return max + 1;
 }

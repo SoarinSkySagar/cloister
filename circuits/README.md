@@ -5,7 +5,7 @@ Groth16 over **BLS12-381** with [gnark](https://github.com/Consensys/gnark) (Apa
 | Path | What |
 |---|---|
 | `spike/` | Trivial go/no-go circuit: correct public interface, toy rule `state_root = prev_state_root + 1` |
-| `ledger/` | **Circuit v1**: account tree, frame-tx moves, in-circuit withdrawals root. See [../spec/batch.md](../spec/batch.md) |
+| `ledger/` | **Circuit v2**: account tree, frame-tx moves, multi-party actions, in-circuit time window, transaction records and log leaf (inclusion proofs), in-circuit withdrawals root. See [../spec/batch.md](../spec/batch.md) and [../spec/inclusion.md](../spec/inclusion.md) |
 | `cmd/export` | Compile, run setup (single-party, **testnet only**), prove a sample and write the VK and proof in both gnark encodings |
 
 ```bash

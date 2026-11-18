@@ -30,3 +30,7 @@ Before any transaction: copy `.env.example` to `.env` and fill in **testnet-only
 | `pnpm spike:ledger batch --id cloister-dev-2 --step onboard --send` | Batch 0: treasury funds account 2, sponsored register_key | ✅ finalized |
 | `pnpm spike:ledger batch --id cloister-dev-2 --step withdraw --send` | Batch 1: atomic withdraw+transfer, relayer withdraws its fees; both paid on L1 | ✅ finalized |
 | `pnpm --filter @cloister/spike gen-vectors` | Regenerate `spec/vectors/withdrawals.json` from the RDK | ✅ |
+
+## Note on circuit versions
+
+`ledger.ts` and the `cloister-dev-2` setup belong to **circuit v1** (no parties, no log leaf). Circuit v2 (`circuits/ledger` today) changes the state layout and verifying key, so a v1 setup cannot be driven by the current prover. `cloister-dev-2` stays on chain as the record of the v1 run; new work uses the sequencer against a v2 setup.

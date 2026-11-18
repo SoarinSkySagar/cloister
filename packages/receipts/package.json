@@ -20,6 +20,8 @@
   },
   "exports": {
     "./verdict": "./src/verdict.ts",
-    "./verify": "./src/verify.ts"
+    "./verify": "./src/verify.ts",
+    "./inclusion": "./src/inclusion.ts",
+    "./poseidon2": "./src/poseidon2.ts"
   }
 }

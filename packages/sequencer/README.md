@@ -12,10 +12,13 @@ export CLOISTER_SEQUENCER_URL=http://127.0.0.1:8787     # for the wallet
 | `POST /tx {tx: hex}` | Validate and queue a signed frame tx. Returns its id (the sighash), or 400 with the reason |
 | `GET /tx/<id>` | queued, included (batch, account, applied actions) or rejected |
 | `POST /account` | A signed query (`signAccountQuery`). Returns only the caller's own account, since the rollup is private |
+| `POST /proof {query, tx}` | The inclusion proof ([spec/inclusion.md](../../spec/inclusion.md)) of a tx. A signed query: only its sender or a listed party gets it |
 | `GET /status` | Batch count, queue length and last error. No balances |
 | `POST /batch` | Run a batch now |
 
 It listens on 127.0.0.1 only. The rollup state lives in `circuits/setup/<id>/state.json` and the ML-DSA keys of accounts in `keys.json` (both gitignored, members-only data). If a queued tx's fee can't be paid at batch time, the tx is rejected and the batch is retried without it.
+
+**Multi-party and time-locked txs.** A tx may name up to 3 co-signing parties and a `not_before` batch. The sequencer checks every party's signature and that each party is an account. A tx whose `not_before` has not been reached stays queued and does not trigger a batch. After each batch the prover's inclusion proofs are kept in `circuits/setup/<id>/proofs/<batch>.json` (members-only data, gitignored).
 
 **Restart and crash behaviour** (tested live on `cloister-dev-2`, batch 10, and offline: `pnpm --filter @cloister/sequencer test`):
 

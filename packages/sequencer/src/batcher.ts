@@ -3,7 +3,7 @@
  * select -> seal bundle -> prove (Go, circuits/cmd/ledger) -> post -> simulate ->
  * submit with the ML-DSA-87 anchor -> advance state -> pay withdrawals on L1.
  */
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -14,7 +14,7 @@ import {
 } from "@qorechain/rdk";
 import {
   CHAIN_ID, NEW_ACCOUNT, REPO_ROOT, actionsOf, decodeBundle, encodeBundle, frameTxFromHex, frameTxToHex, formatQor, newAccountKey, nextFreeIndex,
-  payerOf, pkCommit, sighash, signatureErrors, structuralErrors, toLedgerTx, type FrameTx, type RollupState,
+  notBeforeOf, partiesOf, payerOf, pkCommit, sighash, signatureErrors, structuralErrors, toLedgerTx, type FrameTx, type RollupState,
 } from "@cloister/common";
 
 const run = promisify(execFile);
@@ -30,10 +30,23 @@ export interface SequencerConfig {
   setupDir?: string;      // override circuits/setup/<id> (tests)
 }
 
-/** The prover reports a fee its payer cannot cover as "tx <k>: fee: ..."; the tx is dropped and the batch retried. */
-export function feeFailure(stderr: string): { index: number; reason: string } | undefined {
-  const m = /tx (\d+): (fee: .*)/.exec(stderr);
+/**
+ * The prover reports a tx it cannot include as "tx <k>: fee: ...", "tx <k>: window: ..." or
+ * "tx <k> action <j>: auth: ..." (an unpayable fee, a tx outside its time window, or a debit of an account that is
+ * neither the sender nor a party). The tx is dropped and the batch retried.
+ */
+export function txFailure(stderr: string): { index: number; reason: string } | undefined {
+  const m = /tx (\d+)(?: action \d+)?: ((?:fee|window|auth|parties|account index)[^\n]*)/.exec(stderr);
   return m ? { index: Number(m[1]), reason: m[2]!.trim() } : undefined;
+}
+export const feeFailure = txFailure;
+
+/** One saved inclusion proof (spec/inclusion.md), keyed by the tx's sighash. */
+export interface SavedProof { tx_id: string; proof: InclusionProofJSON }
+export interface InclusionProofJSON {
+  version: number; chainId: string; rollupId: string; batchIndex: number;
+  record: { sender: number; parties: number[] } & Record<string, unknown>;
+  txIndex: number; txPath: string[]; logPath: string[];
 }
 
 export type TxStatus =
@@ -121,6 +134,7 @@ export class Sequencer {
     }
     const payer = payerOf(tx);
     if (payer !== tx.sender && !state.accounts.some((a) => a.index === payer)) errs.push(`sponsor #${payer} does not exist`);
+    for (const p of partiesOf(tx)) if (!state.accounts.some((a) => a.index === p)) errs.push(`party #${p} does not exist`);
     if (errs.length) throw new Error(errs.join("; "));
     this.mempool.push({ id, tx });
     this.persist();
@@ -128,9 +142,14 @@ export class Sequencer {
     return id;
   }
 
-  /** One batch cycle; resolves with the batch index, or undefined if nothing was queued. */
+  /** Txs that may be included in the next batch: their GUARD not_before has been reached. */
+  private ready(batchIndex: number) {
+    return this.mempool.filter(({ tx }) => notBeforeOf(tx) <= BigInt(batchIndex));
+  }
+
+  /** One batch cycle; resolves with the batch index, or undefined if nothing was queued (or nothing is due yet). */
   async runBatch(): Promise<number | undefined> {
-    if (this.busy || !this.mempool.length) return undefined;
+    if (this.busy || !this.ready(this.state().batches).length) return undefined;
     this.busy = true;
     try {
       return await this.cycle();
@@ -147,7 +166,7 @@ export class Sequencer {
     if (this.cfg.proofLog) appendFileSync(join(REPO_ROOT, "PROOF.md"), `| ${new Date().toISOString().slice(0, 10)} | ${what} | ${ref} | testnet |\n`);
   }
 
-  private async cycle(): Promise<number> {
+  private async cycle(): Promise<number | undefined> {
     const { rollupId } = this.cfg;
     const state = this.state();
     const latest = await this.rdk.rest.getLatestBatch(rollupId).catch(() => undefined);
@@ -156,13 +175,13 @@ export class Sequencer {
     if (latest && latest.stateRoot.toLowerCase().padStart(64, "0") !== state.root) throw new Error("local state root differs from the chain's");
 
     // Select up to maxTxs, dropping expired ones; assign indexes to new accounts in order.
-    let picked = this.mempool.slice(0, this.cfg.maxTxs).filter(({ id, tx }) => {
+    let picked = this.ready(batchIndex).slice(0, this.cfg.maxTxs).filter(({ id, tx }) => {
       if (tx.expiryBatch < BigInt(batchIndex)) { this.reject(id, `expired at batch ${tx.expiryBatch}`); return false; }
       return true;
     });
 
     for (;;) {
-      if (!picked.length) return batchIndex;
+      if (!picked.length) return undefined;
       const used = new Set(state.accounts.map((a) => a.index));
       const assigned = picked.map(({ tx }) => {
         if (tx.sender !== NEW_ACCOUNT) return undefined;
@@ -192,7 +211,7 @@ export class Sequencer {
           { cwd: join(REPO_ROOT, "circuits"), maxBuffer: 64 << 20 });
       } catch (e) {
         // A tx whose fee its payer cannot cover is dropped, and the batch retried.
-        const f = feeFailure(String((e as { stderr?: string }).stderr ?? e));
+        const f = txFailure(String((e as { stderr?: string }).stderr ?? e));
         if (!f) throw e;
         this.reject(picked[f.index]!.id, f.reason);
         picked = picked.filter((_, i) => i !== f.index);
@@ -201,6 +220,7 @@ export class Sequencer {
       const result = JSON.parse(readFileSync(join(out, "result.json"), "utf8")) as {
         state_root: string; withdrawals_root: string; withdrawals: { recipient: string; amount: number }[] | null;
         txs: { applied: boolean[]; skipped?: string[] }[]; tx_count: number;
+        inclusion?: InclusionProofJSON[];
       };
 
       const withdrawals = (result.withdrawals ?? []).map((w) => ({ recipient: w.recipient, denom: "uqor", amount: String(w.amount) }));
@@ -229,6 +249,7 @@ export class Sequencer {
       this.log(`${rollupId} batch ${batchIndex}: sequencer service, ${picked.length} frame tx(s), ${withdrawals.length} withdrawal(s), circuit v1 proof verified on chain; status ${settled.status}`, `\`${res.transactionHash}\``);
 
       this.record(picked, assigned, result.txs, batchIndex, res.transactionHash);
+      this.saveProofs(batchIndex, picked.map((p) => p.id), result.inclusion ?? []);
 
       if (tree) {
         if (settled.status !== "finalized") throw new Error("batch not finalized: withdrawals deferred");
@@ -260,6 +281,36 @@ export class Sequencer {
     const done = new Set(picked.map((p) => p.id));
     this.mempool = this.mempool.filter((m) => !done.has(m.id));
     this.persist();
+  }
+
+
+  private proofsDir() { return join(this.setupDir, "proofs"); }
+
+  /** Keep each included tx's inclusion proof (members-only data, like the state). Proofs are in tx slot order. */
+  saveProofs(batchIndex: number, ids: string[], proofs: InclusionProofJSON[]) {
+    if (proofs.length !== ids.length) throw new Error(`prover returned ${proofs.length} inclusion proofs for ${ids.length} txs`);
+    mkdirSync(this.proofsDir(), { recursive: true });
+    const saved: SavedProof[] = ids.map((tx_id, i) => ({ tx_id, proof: proofs[i]! }));
+    writeFileSync(join(this.proofsDir(), `${batchIndex}.json`), JSON.stringify(saved, null, 1));
+  }
+
+  /**
+   * The inclusion proof of a tx, only for its sender or one of its listed parties. `callerCommit` is the pk_commit of
+   * the verified caller (a signed query); a private rollup shows a record only to the accounts it names.
+   */
+  proofFor(txId: string, callerCommit: string): InclusionProofJSON | { error: string } {
+    if (!/^[0-9a-f]{64}$/.test(txId)) return { error: "bad tx id" };
+    const me = this.state().accounts.find((a) => a.pk_commit === callerCommit);
+    if (!me) return { error: "no account for this key" };
+    const dir = this.proofsDir();
+    if (!existsSync(dir)) return { error: "no proof for that tx" };
+    for (const f of readdirSync(dir)) {
+      const hit = (JSON.parse(readFileSync(join(dir, f), "utf8")) as SavedProof[]).find((p) => p.tx_id === txId);
+      if (!hit) continue;
+      const named = hit.proof.record.sender === me.index || hit.proof.record.parties.includes(me.index);
+      return named ? hit.proof : { error: "this tx does not name your account" };
+    }
+    return { error: "no proof for that tx" };
   }
 
   private mempoolFile() { return join(this.setupDir, "mempool.json"); }

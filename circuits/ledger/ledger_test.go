@@ -19,7 +19,7 @@ const (
 
 func testConfig() Config {
 	return Config{
-		Depth: 16, Txs: 4, Moves: 3, Withdrawals: 4,
+		Depth: 16, Txs: 4, Moves: 3, Withdrawals: 4, Parties: 3,
 		ChainID: "qorechain-diana", RollupID: "cloister",
 		Genesis: []GenesisAccount{
 			{Index: treas, Pk: "01", Qor: 1_000_000_000_000, Usd: 1_000_000_000_000},
@@ -255,8 +255,9 @@ func TestRejectActionFromOtherAccount(t *testing.T) {
 	b := Batch{Txs: []TxIn{{Sender: bob, Payer: treas, Relayer: relay, Actions: []ActionIn{
 		{Kind: "transfer", To: bob, Amount: 1},
 	}}}}
-	w, _, _ := build(t, cfg, b, Options{FromOverride: map[[2]int]uint32{{0, 0}: alice}})
-	mustFail(t, cfg, w, "action debiting an account other than the sender")
+	// the checked builder refuses this tx (see TestCheckedBuilderRefusesNonPartyDebit); an unchecked witness must fail in the circuit
+	w, _, _ := build(t, cfg, b, Options{Unchecked: true, FromOverride: map[[2]int]uint32{{0, 0}: alice}})
+	mustFail(t, cfg, w, "action debiting an account other than the sender or a party")
 }
 
 func TestRejectTooManyWithdrawals(t *testing.T) {

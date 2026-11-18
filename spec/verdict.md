@@ -19,7 +19,7 @@ A **verdict** is a member watchtower's signed statement about one batch: what it
 | `signedAt` | integer | unix seconds, informational |
 | `signature` | hex | ML-DSA-87 signature over the message below |
 
-Checks used by the Cloister watchtower: `link`, `decrypt`, `index`, `count`, `structure`, `signature` (and `legacy` for `link-only` batches).
+Checks used by the Cloister watchtower: `link`, `decrypt`, `index`, `count`, `structure`, `signature` (every party's too), `window` (every tx inside the time window it signed), and `legacy` for `link-only` batches.
 
 ## Signed message
 

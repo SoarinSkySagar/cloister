@@ -10,7 +10,7 @@ import {
 } from "@cloister/common";
 import { openEnvelope } from "@qorechain/rdk";
 import { normRoot, signVerdict, sortChecks, type Verdict } from "@cloister/receipts/verdict";
-import { actionsOf, payerOf, sighash, type FrameTx } from "@cloister/common";
+import { actionsOf, notBeforeOf, partiesOf, payerOf, sighash, type FrameTx } from "@cloister/common";
 import { checkBatch, keyResolver, type BatchView } from "./check.ts";
 import { postedBytes } from "./l1.ts";
 
@@ -66,8 +66,8 @@ const explorer: { batches: unknown[] } = { batches: [] };
 const hexOf = (u: Uint8Array) => Buffer.from(u).toString("hex");
 const txView = (t: FrameTx) => ({
   id: hexOf(sighash(t)), sender: t.sender === 0xffffffff ? "new" : t.sender, nonce: String(t.nonce), expiry_batch: String(t.expiryBatch),
-  fee_asset: t.feeAsset, max_fee: String(t.maxFee), payer: payerOf(t),
-  frames: t.frames.map((f) => ({ mode: ["", "VERIFY_SENDER", "VERIFY_PAYER", "ACTION"][f.mode], flags: f.flags, kind: f.kind, params: hexOf(f.params) })),
+  fee_asset: t.feeAsset, max_fee: String(t.maxFee), payer: payerOf(t), parties: partiesOf(t), not_before: String(notBeforeOf(t)),
+  frames: t.frames.map((f) => ({ mode: ["", "VERIFY_SENDER", "VERIFY_PAYER", "ACTION", "VERIFY_PARTY", "GUARD"][f.mode], flags: f.flags, kind: f.kind, params: hexOf(f.params) })),
   actions: actionsOf(t).map((a) => a.kind === "register_key" ? { ...a, publicKey: undefined, pk_commit: pkCommit(a.publicKey) } : { ...a, amount: String((a as { amount: bigint }).amount) }),
   signers: t.sigs.map((x) => x.signer),
 });

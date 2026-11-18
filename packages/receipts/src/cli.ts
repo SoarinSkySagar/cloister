@@ -1,6 +1,7 @@
 /**
  *   pnpm --filter @cloister/receipts cli verify <receipt.json ...>     verify against live chain state
  *   pnpm --filter @cloister/receipts cli verify --all                  every file in receipts/
+ *   pnpm --filter @cloister/receipts cli verify-proof <inclusion-proof.json ...>   a transaction was executed in its batch
  *   pnpm --filter @cloister/receipts cli build --id cloister-dev-2 --batch 3 [--out file]
  * Exit code 1 if any receipt is invalid.
  */
@@ -9,6 +10,7 @@ import { join } from "node:path";
 import { createRdkClient, buildSettlementReceipt } from "@qorechain/rdk";
 import { parseReceipt, verifyReceipt, checkVerdicts, summarize } from "./verify.ts";
 import { parseVerdicts } from "./verdict.ts";
+import { parseInclusion, verifyInclusion } from "./inclusion.ts";
 import { existsSync } from "node:fs";
 
 const [cmd, ...args] = process.argv.slice(2);
@@ -41,6 +43,21 @@ if (cmd === "verify") {
   }
   console.log(bad ? `${bad} invalid` : `all ${files.length} receipt(s) valid`);
   process.exit(bad ? 1 : 0);
+} else if (cmd === "verify-proof") {
+  const files = args.filter((a) => !a.startsWith("--"));
+  if (!files.length) throw new Error("usage: verify-proof <inclusion-proof.json ...>");
+  let bad = 0;
+  for (const f of files) {
+    const pi = parseInclusion(readFileSync(f, "utf8"));
+    if ("error" in pi) { console.log(`INVALID ${f}: ${pi.error}`); bad++; continue; }
+    const v = await verifyInclusion(pi.proof, client);
+    const r = pi.proof.record;
+    console.log(`${v.valid ? "VALID  " : v.unverifiable ? "UNKNOWN" : "INVALID"} ${pi.proof.rollupId} batch ${pi.proof.batchIndex}, slot ${pi.proof.txIndex}: sender #${r.sender}` +
+      `${r.parties.length ? `, co-signers ${r.parties.map((x) => `#${x}`).join(", ")}` : ""}${v.valid ? "" : "  " + v.problems.join("; ")}`);
+    if (!v.valid) bad++;
+  }
+  console.log(bad ? `${bad} not valid` : `all ${files.length} proof(s) reach the chain's state root`);
+  process.exit(bad ? 1 : 0);
 } else if (cmd === "build") {
   const id = flag("--id"), batch = Number(flag("--batch"));
   if (!id || !Number.isInteger(batch)) throw new Error("usage: build --id <rollup> --batch <n> [--out file]");
@@ -49,6 +66,6 @@ if (cmd === "verify") {
   writeFileSync(out, JSON.stringify(r, (_k, v) => (typeof v === "bigint" ? v.toString() : v), 2) + "\n");
   console.log(`receipt -> ${out}`);
 } else {
-  console.log("usage: verify <file...|--all> | build --id <rollup> --batch <n>");
+  console.log("usage: verify <file...|--all> | verify-proof <file...> | build --id <rollup> --batch <n>");
   process.exit(2);
 }

@@ -1,13 +1,18 @@
 [
   {
-    "name": "sponsored transfer and self-paid withdrawal, two unused slots",
+    "name": "sponsored transfer, then a two-party tx where the party withdraws; two unused slots",
     "depth": 16,
     "input": {
       "recipient": "qor1plfn9jpxnavtxsrwe0sg6cls5z9amy8p3tg9nu",
+      "party_slots": 3,
+      "batch_index": 8,
       "records": [
         {
           "sender": 3,
           "nonceBefore": "1",
+          "expiryBatch": "53",
+          "notBeforeBatch": "0",
+          "parties": [],
           "moves": [
             {
               "code": 1,
@@ -32,12 +37,25 @@
               "from": 0,
               "to": 0,
               "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            {
+              "code": 0,
+              "asset": 0,
+              "amount": "0",
+              "from": 0,
+              "to": 0,
+              "aux": "0000000000000000000000000000000000000000000000000000000000000000"
             }
           ]
         },
         {
           "sender": 2,
           "nonceBefore": "4",
+          "expiryBatch": "99",
+          "notBeforeBatch": "7",
+          "parties": [
+            3
+          ],
           "moves": [
             {
               "code": 1,
@@ -48,10 +66,18 @@
               "aux": "0000000000000000000000000000000000000000000000000000000000000000"
             },
             {
+              "code": 1,
+              "asset": 1,
+              "amount": "5",
+              "from": 2,
+              "to": 3,
+              "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            {
               "code": 2,
               "asset": 0,
               "amount": "500000",
-              "from": 2,
+              "from": 3,
               "to": 0,
               "aux": "01388adda2c1df8b298a2113aa3e1ce01827fe0dd34099183f91cd33d00b19b6"
             },
@@ -103,21 +129,27 @@
       "log_index": 65535,
       "recipient_commit": "01388adda2c1df8b298a2113aa3e1ce01827fe0dd34099183f91cd33d00b19b6",
       "record_hashes": [
-        "4549a391a1b820d54b43482950518e187e9780a7243f7bc8194bd4f139ee1193",
-        "5e29503963301ac50e6474c4edadbd44c82c8015763e0a5a9e11ec87b3e2f723",
+        "16715f9ca162c16d56ad5ca8df9d8d2e0dde242260928ededb99a131761659a4",
+        "32c2701290d03edf2de3ffaa0b37acd8a33a05b9b2223087519c5653cb07f397",
         "0000000000000000000000000000000000000000000000000000000000000000",
         "0000000000000000000000000000000000000000000000000000000000000000"
       ],
-      "tx_root": "50fc5f2c07c96df19951390ced9406297bd97db08d2bf734661442d1625a7227",
-      "log_leaf": "7148acfc0ef4929f23193c138d17a6aa181dda7a52465e32a1699e867d5399a6",
+      "tx_root": "1d7faf001158319d832715444ab17a93399d272307b9f7c1e27aa61aea955a08",
+      "log_leaf": "52da8c0073f96110a2e05a6de70eac318b2646a576e73c3532145ca752e4702b",
       "state_root_before_log": "0d08218ac5e49bf51fcce702c537d4bf36e2f5b60d1d75eef3172e80106137f8",
-      "state_root": "43f3ebf13c8663dc7c9d56cfc067812bcdc52f5174761a5f778a53e7237d0c77",
+      "state_root": "20e386dfe24a50221b0c370c0532c672f1bd285b92aec6f8266a2d6f3d63064f",
       "proofs": [
         {
-          "txIndex": 0,
+          "version": 1,
+          "chainId": "qorechain-diana",
+          "rollupId": "cloister-dev-3",
+          "batchIndex": 8,
           "record": {
             "sender": 3,
             "nonceBefore": "1",
+            "expiryBatch": "53",
+            "notBeforeBatch": "0",
+            "parties": [],
             "moves": [
               {
                 "code": 1,
@@ -142,11 +174,20 @@
                 "from": 0,
                 "to": 0,
                 "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+              },
+              {
+                "code": 0,
+                "asset": 0,
+                "amount": "0",
+                "from": 0,
+                "to": 0,
+                "aux": "0000000000000000000000000000000000000000000000000000000000000000"
               }
             ]
           },
+          "txIndex": 0,
           "txPath": [
-            "5e29503963301ac50e6474c4edadbd44c82c8015763e0a5a9e11ec87b3e2f723",
+            "32c2701290d03edf2de3ffaa0b37acd8a33a05b9b2223087519c5653cb07f397",
             "0440d4ee8370b0cd0098bbc48e4b57cce27b1dbdc977f6c1b45c00064e29e374"
           ],
           "logPath": [
@@ -169,10 +210,18 @@
           ]
         },
         {
-          "txIndex": 1,
+          "version": 1,
+          "chainId": "qorechain-diana",
+          "rollupId": "cloister-dev-3",
+          "batchIndex": 8,
           "record": {
             "sender": 2,
             "nonceBefore": "4",
+            "expiryBatch": "99",
+            "notBeforeBatch": "7",
+            "parties": [
+              3
+            ],
             "moves": [
               {
                 "code": 1,
@@ -183,10 +232,18 @@
                 "aux": "0000000000000000000000000000000000000000000000000000000000000000"
               },
               {
+                "code": 1,
+                "asset": 1,
+                "amount": "5",
+                "from": 2,
+                "to": 3,
+                "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+              },
+              {
                 "code": 2,
                 "asset": 0,
                 "amount": "500000",
-                "from": 2,
+                "from": 3,
                 "to": 0,
                 "aux": "01388adda2c1df8b298a2113aa3e1ce01827fe0dd34099183f91cd33d00b19b6"
               },
@@ -200,8 +257,9 @@
               }
             ]
           },
+          "txIndex": 1,
           "txPath": [
-            "4549a391a1b820d54b43482950518e187e9780a7243f7bc8194bd4f139ee1193",
+            "16715f9ca162c16d56ad5ca8df9d8d2e0dde242260928ededb99a131761659a4",
             "0440d4ee8370b0cd0098bbc48e4b57cce27b1dbdc977f6c1b45c00064e29e374"
           ],
           "logPath": [

@@ -5,12 +5,14 @@
  *   index      the bundle names this batch
  *   count      the bundle holds tx_count txs
  *   structure  every frame tx is well formed for this rollup
- *   signature  every ML-DSA-87 signature verifies (the circuit does not prove these)
+ *   signature  every ML-DSA-87 signature verifies, the sender's and every party's (the circuit does not prove these)
+ *   window     every tx is inside the time window it SIGNED: the circuit enforces the window its record states,
+ *              this checks that record against the signed tx (a sequencer cannot widen a window unnoticed)
  */
 import { createHash } from "node:crypto";
 import { openEnvelope } from "@qorechain/rdk";
 import {
-  CHAIN_ID, actionsOf, decodeBundle, pkCommit, signatureErrors, structuralErrors, type FrameTx,
+  CHAIN_ID, actionsOf, decodeBundle, notBeforeOf, pkCommit, signatureErrors, structuralErrors, type FrameTx,
 } from "@cloister/common";
 
 export interface BatchView { batch_index: string; tx_count: string; state_root: string; data_hash: string; status: string }
@@ -43,6 +45,12 @@ export function checkBatch(a: {
   add("structure", !se.length, se.join("; ") || "all well formed");
   const sg = txs.flatMap((t, i) => signatureErrors(t, a.keyOf).map((e) => `tx ${i}: ${e}`));
   add("signature", !sg.length, sg.join("; ") || `${txs.length} tx(s) verified`);
+  const n = BigInt(a.batch.batch_index);
+  const win = txs.flatMap((t, i) => [
+    ...(n < notBeforeOf(t) ? [`tx ${i}: signed not_before ${notBeforeOf(t)}, included in batch ${n}`] : []),
+    ...(n > t.expiryBatch ? [`tx ${i}: signed expiry ${t.expiryBatch}, included in batch ${n}`] : []),
+  ]);
+  add("window", !win.length, win.join("; ") || "every tx inside its signed window");
   return { findings: f, txs };
 }
 

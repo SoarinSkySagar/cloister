@@ -5,7 +5,7 @@ const short = (h, n = 10) => (h && h.length > n * 2 + 1 ? `${h.slice(0, n)}…${
 const num = (n) => Number(n).toLocaleString("en-US");
 const ASSETS = ["QOR", "USD"];
 const amt = (u, a = 0) => `${(Number(u) / 1e6).toLocaleString("en-US", { maximumFractionDigits: 6 })} ${ASSETS[a] ?? "?"}`;
-const KIND = { 1: "transfer", 2: "withdraw", 3: "register_key", 0: "—" };
+const KIND = { 1: "transfer", 2: "withdraw", 3: "register_key", 4: "transfer_from", 5: "withdraw_from", 0: "—" };
 const PAGE = 20;
 
 let D;
@@ -21,7 +21,7 @@ function load() {
   const all = D.batches.flatMap((b) => b.txs.map((t, i) => ({ ...t, batch: Number(b.batch_index), pos: i })));
   D.txs = all.reverse();
   D.byId = new Map(all.map((t) => [t.id, t]));
-  D.withdrawals = all.flatMap((t) => t.actions.filter((a) => a.kind === "withdraw").map((a) => ({ ...a, sender: t.sender, batch: t.batch, tx: t.id }))).reverse();
+  D.withdrawals = all.flatMap((t) => t.actions.filter((a) => a.kind === "withdraw" || a.kind === "withdraw_from").map((a) => ({ ...a, sender: a.from ?? t.sender, batch: t.batch, tx: t.id }))).reverse();
   D.batchList = [...D.batches].reverse();
 }
 
@@ -41,7 +41,9 @@ const batchCols = [{ h: "Batch" }, { h: "Status" }, { h: "Txs", r: 1 }, { h: "St
 
 const txSummary = (t) => t.actions.map((a) =>
   a.kind === "transfer" ? `send ${amt(a.amount, a.asset)} → ${nameOf(a.to)}`
+  : a.kind === "transfer_from" ? `${nameOf(a.from)} sends ${amt(a.amount, a.asset)} → ${nameOf(a.to)}`
   : a.kind === "withdraw" ? `withdraw ${amt(a.amount)} → ${short(a.recipient, 8)}`
+  : a.kind === "withdraw_from" ? `${nameOf(a.from)} withdraws ${amt(a.amount)} → ${short(a.recipient, 8)}`
   : `register key`).join("; ");
 const txRows = (list) => list.map((t) => [
   hashLink(t.id, "tx"), `<a href="#/batch/${t.batch}">${t.batch}</a>`, acct(t.sender), esc(txSummary(t)),
@@ -110,7 +112,16 @@ const pages = {
       let detail = "";
       if (f.mode === "VERIFY_SENDER") detail = `signed by ${t.sender === "new" ? "the key it registers" : esc(nameOf(t.sender))}`;
       else if (f.mode === "VERIFY_PAYER") detail = `fee payer ${esc(nameOf(t.payer))}`;
-      else { const a = t.actions[ai++]; detail = a.kind === "transfer" ? `${amt(a.amount, a.asset)} → ${esc(nameOf(a.to))}` : a.kind === "withdraw" ? `${amt(a.amount)} → <span class="mono">${esc(a.recipient)}</span>` : `pk_commit <span class="mono">${esc(short(a.pk_commit, 12))}</span>`; }
+      else if (f.mode === "VERIFY_PARTY") detail = `co-signer ${esc(nameOf(parseInt(f.params, 16)))}: may be debited by this tx`;
+      else if (f.mode === "GUARD") detail = `not valid before batch ${esc(BigInt("0x" + f.params).toString())}`;
+      else {
+        const a = t.actions[ai++];
+        detail = a.kind === "transfer" ? `${amt(a.amount, a.asset)} → ${esc(nameOf(a.to))}`
+          : a.kind === "transfer_from" ? `${esc(nameOf(a.from))} → ${esc(nameOf(a.to))}: ${amt(a.amount, a.asset)}`
+          : a.kind === "withdraw_from" ? `${esc(nameOf(a.from))}: ${amt(a.amount)} → <span class="mono">${esc(a.recipient)}</span>`
+          : a.kind === "withdraw" ? `${amt(a.amount)} → <span class="mono">${esc(a.recipient)}</span>`
+          : `pk_commit <span class="mono">${esc(short(a.pk_commit, 12))}</span>`;
+      }
       const atomic = f.flags & 4 ? " " + chip("atomic", "warn") : "";
       return [String(i), `<span class="frame-mode">${esc(f.mode)}</span>`, f.mode === "ACTION" ? esc(KIND[f.kind] ?? f.kind) : "—", detail + atomic];
     });
@@ -120,7 +131,9 @@ const pages = {
         ["Batch", `<a href="#/batch/${t.batch}">${t.batch}</a> · position ${t.pos}`],
         ["Sender", acct(t.sender)],
         ["Fee payer", t.payer === t.sender ? `${acct(t.payer)} ${chip("self-paid")}` : `${acct(t.payer)} ${chip("sponsored", "info")}`],
-        ["Nonce", esc(t.nonce)], ["Max fee", amt(t.max_fee, t.fee_asset)], ["Expires at batch", esc(t.expiry_batch)],
+        ...(t.parties?.length ? [["Co-signers", t.parties.map((p) => acct(p)).join(", ")]] : []),
+        ["Nonce", esc(t.nonce)], ["Max fee", amt(t.max_fee, t.fee_asset)],
+        ["Valid in batches", `${esc(t.not_before ?? "0")} – ${esc(t.expiry_batch)}`],
         ["Signatures", `${t.signers.length} × ML-DSA-87 (${t.signers.map((s) => esc(nameOf(s))).join(", ")})`],
       ]))}
       ${panel("Frames", table([{ h: "#" }, { h: "Mode" }, { h: "Action" }, { h: "Detail" }], frameRows))}`;
@@ -134,7 +147,7 @@ const pages = {
   account(_p, id) {
     const a = D.accounts.find((x) => String(x.index) === id || x.name === id);
     if (!a) return notFound(`Account ${id}`);
-    const mine = D.txs.filter((t) => t.sender === a.index || t.payer === a.index || t.actions.some((x) => x.to === a.index));
+    const mine = D.txs.filter((t) => t.sender === a.index || t.payer === a.index || (t.parties ?? []).includes(a.index) || t.actions.some((x) => x.to === a.index || x.from === a.index));
     return `<div class="crumb"><a href="#/accounts">Accounts</a> / #${a.index}</div><h1>${esc(nameOf(a.index))}</h1>
       ${panel("Balances", kv([["Key commitment", `<span class="mono">${esc(a.pk_commit)}</span>${copy(a.pk_commit)}`], ["QOR", amt(a.qor)], ["USD", amt(a.usd, 1)], ["Nonce", num(a.nonce)]]))}
       ${panel(`Transactions (${mine.length})`, table(txCols, txRows(mine)))}`;

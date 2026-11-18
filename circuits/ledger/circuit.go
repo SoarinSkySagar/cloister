@@ -6,10 +6,15 @@
 // What the circuit guarantees: every state change is a valid move on the
 // committed tree, no balance goes negative or over 64 bits, value is
 // conserved per asset except for withdrawals, nonces increment once per
-// included tx, a key can only be set on an account without one, and every
-// withdrawal leaf the chain will pay is backed by a debit of the same amount.
-// What it does not prove (the watchtower does): ML-DSA signatures, and that
-// the transactions are the ones in the sealed posts (data_hash).
+// included tx, a key can only be set on an account without one, every
+// withdrawal leaf the chain will pay is backed by a debit of the same amount,
+// an applied action debits only the sender or a listed co-signing party, every
+// included tx is inside its time window (checked against an in-state batch
+// counter), and the batch's transaction records are committed in the state
+// root (spec/inclusion.md).
+// What it does not prove (the watchtower does): ML-DSA signatures of the
+// sender and the parties, and that the transactions are the ones in the sealed
+// posts (data_hash).
 package ledger
 
 import (
@@ -28,6 +33,7 @@ type Config struct {
 	Txs         int              `json:"txs"`         // tx slots per batch
 	Moves       int              `json:"moves"`       // moves per tx: 1 fee move + (Moves-1) actions
 	Withdrawals int              `json:"withdrawals"` // withdrawal slots per batch: 1, 2 or 4
+	Parties     int              `json:"parties"`     // co-signer slots per tx (spec/frame-tx.md, multi-party)
 	ChainID     string           `json:"chain_id"`
 	RollupID    string           `json:"rollup_id"`
 	Genesis     []GenesisAccount `json:"genesis"`
@@ -43,6 +49,17 @@ type GenesisAccount struct {
 func (c Config) Validate() error {
 	if c.Depth < 1 || c.Depth > 32 || c.Txs < 1 || c.Moves < 2 {
 		return fmt.Errorf("bad shape %d/%d/%d", c.Depth, c.Txs, c.Moves)
+	}
+	if c.Txs&(c.Txs-1) != 0 {
+		return fmt.Errorf("tx slots must be a power of two (the transaction root is a Merkle tree)")
+	}
+	if c.Parties < 1 || c.Parties > 8 {
+		return fmt.Errorf("parties must be 1..8")
+	}
+	for _, g := range c.Genesis {
+		if g.Index >= LogIndex(c.Depth) {
+			return fmt.Errorf("genesis account %d: the last leaf is reserved for the log", g.Index)
+		}
 	}
 	if c.Withdrawals != 1 && c.Withdrawals != 2 && c.Withdrawals != 4 {
 		return fmt.Errorf("withdrawals must be 1, 2 or 4")
@@ -77,6 +94,12 @@ type Tx struct {
 	Active frontend.Variable
 	Sender Update // nonce increment
 	Moves  []Move
+
+	// Time window (batch indexes) and co-signers. Party slots are listed in
+	// the tx record; an active party may be debited by this tx's actions.
+	Expiry, NotBefore frontend.Variable
+	PartyActive       []frontend.Variable
+	Party             []frontend.Variable
 }
 
 type Circuit struct {
@@ -87,6 +110,9 @@ type Circuit struct {
 
 	DataHashSq frontend.Variable
 	Txs        []Tx
+	// Log is the reserved leaf at LogIndex: the previous batch's tx root and
+	// the batch counter, replaced by this batch's.
+	Log        Update
 	Recipients [][RecipientLen]frontend.Variable // one per withdrawal slot, ASCII bytes
 
 	cfg     Config
@@ -106,9 +132,11 @@ func New(cfg Config) (*Circuit, error) {
 	root := g.Root()
 	c := &Circuit{cfg: cfg, genesis: root.BigInt(new(big.Int))}
 	upd := func() Update { return Update{Path: make([]frontend.Variable, cfg.Depth)} }
+	c.Log = upd()
 	c.Txs = make([]Tx, cfg.Txs)
 	for i := range c.Txs {
-		c.Txs[i] = Tx{Sender: upd(), Moves: make([]Move, cfg.Moves)}
+		c.Txs[i] = Tx{Sender: upd(), Moves: make([]Move, cfg.Moves),
+			PartyActive: make([]frontend.Variable, cfg.Parties), Party: make([]frontend.Variable, cfg.Parties)}
 		for m := range c.Txs[i].Moves {
 			c.Txs[i].Moves[m] = Move{From: upd(), To: upd()}
 		}
@@ -118,9 +146,10 @@ func New(cfg Config) (*Circuit, error) {
 }
 
 type ctx struct {
-	api  frontend.API
-	bits bitAPI
-	p2   *poseidon2.Permutation
+	api      frontend.API
+	bits     bitAPI
+	p2       *poseidon2.Permutation
+	logIndex *big.Int
 }
 
 func (x ctx) leafHash(l Leaf) frontend.Variable {
@@ -143,11 +172,35 @@ func (x ctx) rootOf(leaf frontend.Variable, idxBits []frontend.Variable, path []
 	return cur
 }
 
-// apply checks u.Old against root and returns the root with newLeaf written.
-func (x ctx) apply(root frontend.Variable, u Update, newLeaf Leaf, depth int) frontend.Variable {
+// applyAt checks u.Old against root and returns the root with newLeaf written.
+func (x ctx) applyAt(root frontend.Variable, u Update, newLeaf Leaf, depth int) frontend.Variable {
 	idx := x.api.ToBinary(u.Index, depth)
 	x.api.AssertIsEqual(x.rootOf(x.leafHash(u.Old), idx, u.Path), root)
 	return x.rootOf(x.leafHash(newLeaf), idx, u.Path)
+}
+
+// apply is an account update. It may never touch the reserved log leaf.
+func (x ctx) apply(root frontend.Variable, u Update, newLeaf Leaf, depth int) frontend.Variable {
+	x.api.AssertIsDifferent(u.Index, x.logIndex)
+	return x.applyAt(root, u, newLeaf, depth)
+}
+
+// md is the Merkle-Damgard Poseidon2 hash with a zero IV.
+func (x ctx) md(fields []frontend.Variable) frontend.Variable {
+	var h frontend.Variable = 0
+	for _, f := range fields {
+		h = x.p2.Compress(h, f)
+	}
+	return h
+}
+
+// pack21 reads 21 bytes as a big-endian integer.
+func (x ctx) pack21(bytes []frontend.Variable) frontend.Variable {
+	var acc frontend.Variable = 0
+	for i, b := range bytes {
+		acc = x.api.Add(acc, x.api.Mul(b, new(big.Int).Lsh(big.NewInt(1), uint(8*(len(bytes)-1-i)))))
+	}
+	return acc
 }
 
 func (x ctx) u64(v frontend.Variable) { x.api.ToBinary(v, 64) }
@@ -157,7 +210,7 @@ func (c *Circuit) Define(api frontend.API) error {
 	if err != nil {
 		return err
 	}
-	x := ctx{api: api, bits: bitAPI{api}, p2: p2}
+	x := ctx{api: api, bits: bitAPI{api}, p2: p2, logIndex: new(big.Int).SetUint64(uint64(LogIndex(c.cfg.Depth)))}
 	cfg := c.cfg
 	W := cfg.Withdrawals
 
@@ -173,10 +226,40 @@ func (c *Circuit) Define(api frontend.API) error {
 		slotAmt[k] = 0
 	}
 
+	// The batch index n is the counter in the log leaf (checked against the
+	// root below, after the accounts have been updated; no account update can
+	// touch that leaf).
+	// n starts at 0 and only this circuit raises it, one per batch, so it stays below 2^64.
+	n := c.Log.Old.Nonce
+
+	// Recipient commitments, one per withdrawal slot: the record of a
+	// withdrawal binds the L1 recipient (spec/inclusion.md).
+	rcommit := make([]frontend.Variable, W)
+	for k := 0; k < W; k++ {
+		rcommit[k] = x.p2.Compress(x.pack21(c.Recipients[k][:21]), x.pack21(c.Recipients[k][21:]))
+	}
+
+	recLeaves := make([]frontend.Variable, 0, len(c.Txs))
 	for _, tx := range c.Txs {
 		api.AssertIsBoolean(tx.Active)
 		s := tx.Sender.Old
 		root = x.apply(root, tx.Sender, Leaf{s.Pk, s.Qor, s.Usd, api.Add(s.Nonce, tx.Active), s.Orders}, cfg.Depth)
+
+		// time window: not_before <= n <= expiry for every included tx
+		x.u64(tx.Expiry)
+		x.u64(tx.NotBefore)
+		x.u64(api.Mul(tx.Active, api.Sub(n, tx.NotBefore)))
+		x.u64(api.Mul(tx.Active, api.Sub(tx.Expiry, n)))
+
+		// co-signers: booleans, and the set an action may debit besides the sender
+		for i := range tx.Party {
+			api.AssertIsBoolean(tx.PartyActive[i])
+		}
+
+		recFields := []frontend.Variable{TxRecordTag, tx.Sender.Index, s.Nonce, tx.Expiry, tx.NotBefore}
+		for i := range tx.Party {
+			recFields = append(recFields, api.Mul(tx.PartyActive[i], api.Add(tx.Party[i], 1)))
+		}
 
 		for m, mv := range tx.Moves {
 			for _, b := range []frontend.Variable{mv.IsTransfer, mv.IsWithdraw, mv.IsRegister, mv.Asset} {
@@ -190,8 +273,15 @@ func (c *Circuit) Define(api frontend.API) error {
 				api.AssertIsEqual(mv.IsWithdraw, 0)
 				api.AssertIsEqual(mv.IsRegister, 0)
 			} else {
-				// actions act on the sender's account
-				api.AssertIsEqual(api.Mul(any, api.Sub(mv.From.Index, tx.Sender.Index)), 0)
+				// an applied action debits the sender or an active co-signing party
+				notAuth := api.Sub(1, api.IsZero(api.Sub(mv.From.Index, tx.Sender.Index)))
+				for i := range tx.Party {
+					match := api.Mul(tx.PartyActive[i], api.IsZero(api.Sub(mv.From.Index, tx.Party[i])))
+					notAuth = api.Mul(notAuth, api.Sub(1, match))
+				}
+				api.AssertIsEqual(api.Mul(any, notAuth), 0)
+				// a key is registered on the sender's own account only
+				api.AssertIsEqual(api.Mul(mv.IsRegister, api.Sub(mv.From.Index, tx.Sender.Index)), 0)
 			}
 			api.AssertIsEqual(api.Mul(mv.IsWithdraw, mv.Asset), 0) // only QOR leaves the rollup
 			x.u64(mv.Amount)
@@ -219,15 +309,40 @@ func (c *Circuit) Define(api frontend.API) error {
 			root = x.apply(root, mv.To, nt, cfg.Depth)
 
 			// withdraw: the k-th withdraw of the batch fills slot k
+			var rcSel frontend.Variable = 0
 			if m > 0 {
 				for k := 0; k < W; k++ {
 					hit := api.Mul(mv.IsWithdraw, api.IsZero(api.Sub(wCount, k)))
 					slotAmt[k] = api.Add(slotAmt[k], api.Mul(hit, mv.Amount))
+					rcSel = api.Add(rcSel, api.Mul(hit, rcommit[k]))
 				}
 				wCount = api.Add(wCount, mv.IsWithdraw)
 			}
+
+			// the move's part of the tx record (spec/inclusion.md)
+			val := api.Add(mv.IsTransfer, mv.IsWithdraw)
+			code := api.Add(mv.IsTransfer, api.Mul(2, mv.IsWithdraw), api.Mul(3, mv.IsRegister))
+			aux := api.Add(api.Mul(mv.PkCommit, mv.IsRegister), api.Mul(rcSel, mv.IsWithdraw))
+			recFields = append(recFields, code, api.Mul(mv.Asset, val), api.Mul(mv.Amount, val),
+				api.Mul(mv.From.Index, any), api.Mul(mv.To.Index, mv.IsTransfer), aux)
 		}
+		recLeaves = append(recLeaves, api.Mul(tx.Active, x.md(recFields)))
 	}
+
+	// tx root, then the log leaf: replace {previous tx root, n} by {this tx root, n+1}
+	level := recLeaves
+	for len(level) > 1 {
+		next := make([]frontend.Variable, len(level)/2)
+		for i := range next {
+			next[i] = x.p2.Compress(level[2*i], level[2*i+1])
+		}
+		level = next
+	}
+	api.AssertIsEqual(c.Log.Index, x.logIndex)
+	api.AssertIsEqual(c.Log.Old.Qor, 0)
+	api.AssertIsEqual(c.Log.Old.Usd, 0)
+	api.AssertIsEqual(c.Log.Old.Orders, 0)
+	root = x.applyAt(root, c.Log, Leaf{Pk: level[0], Qor: 0, Usd: 0, Nonce: api.Add(n, 1), Orders: 0}, cfg.Depth)
 	api.AssertIsEqual(root, c.StateRoot)
 
 	// at most W withdrawals: n in {0..W}

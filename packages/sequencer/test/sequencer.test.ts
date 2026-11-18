@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pqKeyFromSeed } from "@qorechain/qoresign";
 import { ASSET, NEW_ACCOUNT, buildFrameTx, encodeBundle, pkCommit, sighash, signFrameTx } from "@cloister/common";
-import { Sequencer, feeFailure } from "../src/batcher.ts";
+import { Sequencer, feeFailure, txFailure, type InclusionProofJSON } from "../src/batcher.ts";
 
 const ID = "cloister-dev-9";
 const key = (n: number) => pqKeyFromSeed(new Uint8Array(32).fill(n));
@@ -96,4 +96,53 @@ test("recover(): refuses when the chain is two or more batches ahead, does nothi
   await assert.rejects(() => crashSandbox({ batchIndex: 6, stateRoot: ROOT }).seq.recover(), /cannot recover/);
   const sync = sandbox({ batches: 5, root: ROOT, accounts: [] }, { batchIndex: 4, stateRoot: ROOT });
   assert.equal(await sync.seq.recover(), undefined);
+});
+
+test("txFailure reads every refusal the prover reports, with or without an action index", () => {
+  assert.deepEqual(txFailure("tx 1: window: not valid before batch 9 (this is batch 3)"), { index: 1, reason: "window: not valid before batch 9 (this is batch 3)" });
+  assert.deepEqual(txFailure("execute: tx 0 action 2: auth: account 7 is not the sender or a party of this tx"), { index: 0, reason: "auth: account 7 is not the sender or a party of this tx" });
+  assert.deepEqual(txFailure("tx 3: parties must be distinct, differ from the sender and be valid accounts"), { index: 3, reason: "parties must be distinct, differ from the sender and be valid accounts" });
+  assert.equal(txFailure("tx 0: something unrelated"), undefined);
+});
+
+const bob = key(5);
+const swapTx = (parties: number[], notBefore = 0n) => signFrameTx(signFrameTx(signFrameTx(buildFrameTx({
+  chainId: "qorechain-diana", rollupId: ID, sender: 5, nonce: 0n, expiryBatch: 99n, maxFee: 10_000n, payer: 0, parties, notBefore,
+  actions: [{ kind: "transfer_from", from: 5, to: 6, asset: ASSET.QOR, amount: 1n, atomic: false }] }), 5, alice.secretKey), 0, op.secretKey), 6, bob.secretKey);
+
+test("a tx naming a party that is not an account is refused, and a known party is accepted", () => {
+  const { seq } = sandbox({ batches: 3, root: ROOT, accounts: [acct(0, op.publicKey), acct(5, alice.publicKey), acct(6, bob.publicKey)] });
+  seq.keystore.set(5, alice.publicKey); seq.keystore.set(0, op.publicKey); seq.keystore.set(6, bob.publicKey);
+  assert.equal(typeof seq.submit(swapTx([6])), "string");
+  const ghost = signFrameTx(signFrameTx(buildFrameTx({
+    chainId: "qorechain-diana", rollupId: ID, sender: 5, nonce: 1n, expiryBatch: 99n, maxFee: 10_000n, parties: [9],
+    actions: [{ kind: "transfer_from", from: 9, to: 6, asset: ASSET.QOR, amount: 1n, atomic: false }] }), 5, alice.secretKey), 9, bob.secretKey);
+  assert.throws(() => seq.submit(ghost), /party #9 does not exist|no key for account 9/);
+});
+
+test("a time-locked tx waits in the queue and does not trigger a batch before its batch", async () => {
+  const { seq } = sandbox({ batches: 3, root: ROOT, accounts: [acct(0, op.publicKey), acct(5, alice.publicKey), acct(6, bob.publicKey)] });
+  seq.keystore.set(5, alice.publicKey); seq.keystore.set(0, op.publicKey); seq.keystore.set(6, bob.publicKey);
+  seq.submit(swapTx([6], 5n)); // next batch is 3: not before 5
+  assert.equal(seq.queueLength(), 1);
+  assert.equal(await seq.runBatch(), undefined, "nothing is due, so no batch runs");
+  assert.equal(seq.queueLength(), 1, "the tx stays queued");
+});
+
+const proofOf = (sender: number, parties: number[]): InclusionProofJSON => ({
+  version: 1, chainId: "qorechain-diana", rollupId: ID, batchIndex: 3, record: { sender, parties }, txIndex: 0, txPath: [], logPath: [],
+});
+
+test("an inclusion proof is shown only to the accounts its record names", () => {
+  const { seq } = sandbox({ batches: 4, root: ROOT, accounts: [acct(0, op.publicKey), acct(5, alice.publicKey), acct(6, bob.publicKey), acct(7, carol.publicKey)] });
+  const id = "ab".repeat(32);
+  seq.saveProofs(3, [id], [proofOf(5, [6])]);
+  const who = (k: typeof alice) => seq.proofFor(id, pkCommit(k.publicKey));
+  assert.equal((who(alice) as InclusionProofJSON).batchIndex, 3, "the sender");
+  assert.equal((who(bob) as InclusionProofJSON).batchIndex, 3, "a listed party");
+  assert.deepEqual(who(carol), { error: "this tx does not name your account" });
+  assert.deepEqual(who(key(9)), { error: "no account for this key" });
+  assert.deepEqual(seq.proofFor("00".repeat(32), pkCommit(alice.publicKey)), { error: "no proof for that tx" });
+  assert.deepEqual(seq.proofFor("not-an-id", pkCommit(alice.publicKey)), { error: "bad tx id" });
+  assert.throws(() => seq.saveProofs(3, [id, id], [proofOf(5, [])]), /1 inclusion proofs for 2 txs/);
 });

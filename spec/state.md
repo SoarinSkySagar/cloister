@@ -19,7 +19,7 @@ empty leaf = 0
 
 ## Reserved log leaf
 
-The leaf at index `LOG_INDEX = 2^depth - 1` is not an account. It holds the transaction root of the latest batch (`pk_commit = tx_root`, all other fields 0). Accounts are never assigned this index and no account update may touch it. Defined in [inclusion.md](inclusion.md).
+The leaf at index `LOG_INDEX = 2^depth - 1` is not an account. It holds the transaction root of the latest batch and the **batch counter**: `pk_commit = tx_root`, `nonce = number of batches applied so far`, all other fields 0. The circuit reads the counter as the current batch index `n` (genesis has no log leaf, so `n = 0`), enforces every transaction's time window against it, and writes back `tx_root` and `n + 1`. Accounts are never assigned this index and no account update may touch it. Defined in [inclusion.md](inclusion.md).
 
 ## Assets
 

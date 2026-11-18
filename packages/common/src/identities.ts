@@ -54,6 +54,7 @@ export async function allIdentities(rdk: RdkClient, env = loadEnv()): Promise<Id
 // ---- rollup state view ----
 
 export interface StateAccount { index: number; pk_commit: string; qor: number; usd: number; nonce: number }
-export interface RollupState { batches: number; root: string; accounts: StateAccount[] }
+/** `tx_root` is the latest batch's transaction root, held in the reserved log leaf (spec/state.md); the log leaf is not an account. */
+export interface RollupState { batches: number; root: string; tx_root?: string; accounts: StateAccount[] }
 
 export const findByCommit = (s: RollupState, commit: string) => s.accounts.find((a) => a.pk_commit === commit);

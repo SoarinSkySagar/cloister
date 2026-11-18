@@ -104,6 +104,9 @@ importers:
       '@cloister/common':
         specifier: workspace:*
         version: link:../../packages/common
+      '@qorechain/qoresign':
+        specifier: 0.2.0
+        version: 0.2.0
       '@qorechain/rdk':
         specifier: 0.9.0
         version: 0.9.0(viem@2.57.20(typescript@5.9.3))

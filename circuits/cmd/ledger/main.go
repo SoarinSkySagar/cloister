@@ -40,8 +40,11 @@ type rawWriter interface {
 
 // State is the persisted rollup state between batches.
 type State struct {
-	Batches  int            `json:"batches"` // batches already settled; 0 = genesis
-	Root     string         `json:"root"`
+	Batches int    `json:"batches"` // batches already settled; 0 = genesis (also the batch counter in the log leaf)
+	Root    string `json:"root"`
+	// TxRoot is the latest batch's transaction root, held in the reserved log
+	// leaf (spec/state.md). The log leaf is not an account and is not listed below.
+	TxRoot   string         `json:"tx_root,omitempty"`
 	Accounts []StateAccount `json:"accounts"`
 }
 
@@ -57,9 +60,13 @@ func hex32(e fr.Element) string { b := e.Bytes(); return hex.EncodeToString(b[:]
 
 func toState(t *ledger.Tree, batches int, depth int) State {
 	s := State{Batches: batches, Root: hex32(t.Root())}
+	logIdx := ledger.LogIndex(depth)
+	if batches > 0 {
+		s.TxRoot = hex32(t.Get(logIdx).Pk)
+	}
 	for i := uint32(0); uint64(i) < 1<<depth; i++ {
 		a := t.Get(i)
-		if a.IsEmpty() {
+		if a.IsEmpty() || i == logIdx {
 			continue
 		}
 		s.Accounts = append(s.Accounts, StateAccount{i, hex32(a.Pk), a.Qor, a.Usd, a.Nonce})
@@ -76,7 +83,19 @@ func fromState(s State, depth int) *ledger.Tree {
 		}
 		var e fr.Element
 		e.SetBigInt(pk)
+		if a.Index >= ledger.LogIndex(depth) {
+			log.Fatalf("state.json lists account %d: the last leaf is reserved for the log", a.Index)
+		}
 		t.Set(a.Index, ledger.Account{Pk: e, Qor: a.Qor, Usd: a.Usd, Nonce: a.Nonce})
+	}
+	if s.Batches > 0 {
+		root, ok := new(big.Int).SetString(s.TxRoot, 16)
+		if !ok {
+			log.Fatal("state.json has batches but no tx_root")
+		}
+		var e fr.Element
+		e.SetBigInt(root)
+		t.Set(ledger.LogIndex(depth), ledger.LogAccount(e, uint64(s.Batches-1)))
 	}
 	if got := hex32(t.Root()); got != s.Root {
 		log.Fatalf("state.json root %s does not match its accounts (%s)", s.Root, got)
@@ -172,6 +191,18 @@ type Result struct {
 	Withdrawals     []ledger.Withdrawal `json:"withdrawals"`
 	Txs             []ledger.TxResult   `json:"txs"`
 	TxCount         int                 `json:"tx_count"`
+	// Inclusion proofs (spec/inclusion.md): the committed transaction root and one
+	// proof per included tx, in batch order, each checkable against state_root.
+	TxRoot    string             `json:"tx_root"`
+	Inclusion []ledger.ProofJSON `json:"inclusion"`
+}
+
+func inclusionJSON(cfg ledger.Config, res *ledger.Result) []ledger.ProofJSON {
+	out := make([]ledger.ProofJSON, 0, len(res.Proofs))
+	for _, p := range res.Proofs {
+		out = append(out, p.JSON(cfg.ChainID, cfg.RollupID))
+	}
+	return out
 }
 
 func prove(dir, batchPath, dataHex, out string) {
@@ -244,6 +275,7 @@ func prove(dir, batchPath, dataHex, out string) {
 		BatchIndex: st.Batches, PrevStateRoot: fmt.Sprintf("%064s", prev), StateRoot: hex32(res.NewRoot),
 		DataHash: hex.EncodeToString(data[:]), WithdrawalsRoot: wr, WithdrawalsModR: wm,
 		Withdrawals: res.Withdrawals, Txs: res.Txs, TxCount: len(batch.Txs),
+		TxRoot: hex32(res.TxRoot), Inclusion: inclusionJSON(cfg, res),
 	})
 	writeJSON(filepath.Join(out, "next-state.json"), toState(tree, st.Batches+1, cfg.Depth))
 	fmt.Printf("proof ok: %s (state_root %s, %d withdrawals)\n", out, hex32(res.NewRoot), len(res.Withdrawals))

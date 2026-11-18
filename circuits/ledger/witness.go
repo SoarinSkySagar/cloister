@@ -3,6 +3,7 @@ package ledger
 import (
 	"encoding/hex"
 	"fmt"
+	"math"
 	"math/big"
 	"strings"
 
@@ -23,16 +24,23 @@ type TxIn struct {
 	FeeAsset uint8      `json:"fee_asset"`
 	Fee      uint64     `json:"fee"`
 	Actions  []ActionIn `json:"actions"`
+	// Parties are the VERIFY_PARTY accounts: actions may debit them besides the sender.
+	Parties []uint32 `json:"parties,omitempty"`
+	// Expiry is the last batch index the tx is valid in (nil: no expiry);
+	// NotBefore the first (GUARD frame).
+	Expiry    *uint64 `json:"expiry,omitempty"`
+	NotBefore uint64  `json:"not_before,omitempty"`
 }
 
 type ActionIn struct {
-	Kind      string `json:"kind"` // transfer | withdraw | register_key
-	Atomic    bool   `json:"atomic,omitempty"`
-	To        uint32 `json:"to,omitempty"`
-	Asset     uint8  `json:"asset,omitempty"`
-	Amount    uint64 `json:"amount,omitempty"`
-	Recipient string `json:"recipient,omitempty"`
-	PkCommit  string `json:"pk_commit,omitempty"` // hex, < r
+	Kind      string  `json:"kind"`           // transfer | withdraw | register_key
+	From      *uint32 `json:"from,omitempty"` // account to debit (transfer_from / withdraw_from); nil = the sender
+	Atomic    bool    `json:"atomic,omitempty"`
+	To        uint32  `json:"to,omitempty"`
+	Asset     uint8   `json:"asset,omitempty"`
+	Amount    uint64  `json:"amount,omitempty"`
+	Recipient string  `json:"recipient,omitempty"`
+	PkCommit  string  `json:"pk_commit,omitempty"` // hex, < r
 }
 
 // TxResult says what happened to each tx and action.
@@ -49,6 +57,13 @@ type Result struct {
 	Withdrawals     []Withdrawal
 	WithdrawalsRoot [32]byte
 	Txs             []TxResult
+	// Inclusion (spec/inclusion.md): the batch index the circuit counted, one
+	// record per tx slot (nil = unused), their Merkle root, and a proof per
+	// included tx.
+	BatchIndex uint64
+	Records    []*TxRecord
+	TxRoot     fr.Element
+	Proofs     []InclusionProof
 }
 
 // Options are for tests only: Unchecked applies every move as given, with no
@@ -58,11 +73,18 @@ type Options struct {
 	Unchecked bool
 	// FromOverride makes an action debit this account instead of the sender.
 	FromOverride map[[2]int]uint32
+	// LogAt (with Unchecked) keeps the log leaf at another index, so a test can
+	// build an otherwise consistent witness that only the circuit's
+	// "log update is at LOG_INDEX" rule rejects.
+	LogAt *uint32
 }
 
 func GenesisTree(cfg Config) (*Tree, error) {
 	t := NewTree(cfg.Depth)
 	for _, g := range cfg.Genesis {
+		if g.Index >= LogIndex(cfg.Depth) {
+			return nil, fmt.Errorf("genesis %d: the last leaf is reserved for the log", g.Index)
+		}
 		pk, err := parseFr(g.Pk)
 		if err != nil {
 			return nil, fmt.Errorf("genesis %d: %w", g.Index, err)
@@ -116,6 +138,12 @@ func (b *builder) update(idx uint32, next func(Account) Account) Update {
 	return u
 }
 
+// updateLog records the log leaf's old value and path (after every account
+// update) and writes the new one.
+func (b *builder) updateLog(idx uint32, next Account) Update {
+	return b.update(idx, func(Account) Account { return next })
+}
+
 func (b *builder) noop(idx uint32) Move {
 	same := func(a Account) Account { return a }
 	return Move{IsTransfer: 0, IsWithdraw: 0, IsRegister: 0, Asset: 0, Amount: 0, PkCommit: 0,
@@ -150,6 +178,18 @@ type move struct {
 	amount   uint64
 	pk       fr.Element
 	recip    string
+}
+
+// record is the move's tx-record form (spec/inclusion.md); an unapplied move is all zeros.
+func (mv move) record(applied bool) MoveRecord {
+	if !applied || mv.kind == 0 {
+		return MoveRecord{}
+	}
+	var rc fr.Element
+	if mv.kind == 2 {
+		rc, _ = RecipientCommit(mv.recip)
+	}
+	return NewMoveRecord(uint8(mv.kind), mv.asset, mv.amount, mv.from, mv.to, mv.pk, rc)
 }
 
 // check reports why mv cannot apply on top of accounts in ov (an overlay of
@@ -266,8 +306,18 @@ func Build(cfg Config, t *Tree, prevIsGenesis bool, batch Batch, opts Options) (
 		}
 	}
 	res := &Result{PrevRoot: t.Root()}
+	logIdx := LogIndex(cfg.Depth)
+	if opts.Unchecked && opts.LogAt != nil {
+		logIdx = *opts.LogAt
+	}
+	res.BatchIndex = t.Get(logIdx).Nonce // the circuit reads the batch counter from the log leaf
+	res.Records = make([]*TxRecord, cfg.Txs)
 
 	for i := range w.Txs {
+		w.Txs[i].Expiry, w.Txs[i].NotBefore = 0, 0
+		for k := range w.Txs[i].Party {
+			w.Txs[i].PartyActive[k], w.Txs[i].Party[k] = 0, 0
+		}
 		if i >= len(batch.Txs) {
 			w.Txs[i].Active = 0
 			w.Txs[i].Sender = b.update(0, func(a Account) Account { return a })
@@ -277,6 +327,43 @@ func Build(cfg Config, t *Tree, prevIsGenesis bool, batch Batch, opts Options) (
 			continue
 		}
 		tx := batch.Txs[i]
+		expiry := uint64(math.MaxUint64)
+		if tx.Expiry != nil {
+			expiry = *tx.Expiry
+		}
+		rec := &TxRecord{Sender: tx.Sender, Expiry: expiry, NotBefore: tx.NotBefore, Parties: append([]uint32{}, tx.Parties...)}
+		if !opts.Unchecked {
+			if len(tx.Parties) > cfg.Parties {
+				return nil, nil, fmt.Errorf("tx %d: %d parties, the circuit takes %d", i, len(tx.Parties), cfg.Parties)
+			}
+			seen := map[uint32]bool{tx.Sender: true}
+			for _, p := range tx.Parties {
+				if seen[p] || uint64(p) >= uint64(logIdx) {
+					return nil, nil, fmt.Errorf("tx %d: parties must be distinct, differ from the sender and be valid accounts", i)
+				}
+				seen[p] = true
+			}
+			if res.BatchIndex < tx.NotBefore {
+				return nil, nil, fmt.Errorf("tx %d: window: not valid before batch %d (this is batch %d)", i, tx.NotBefore, res.BatchIndex)
+			}
+			if res.BatchIndex > expiry {
+				return nil, nil, fmt.Errorf("tx %d: window: expired at batch %d (this is batch %d)", i, expiry, res.BatchIndex)
+			}
+			if uint64(tx.Sender) >= uint64(logIdx) || uint64(tx.Payer) >= uint64(logIdx) || uint64(tx.Relayer) >= uint64(logIdx) {
+				return nil, nil, fmt.Errorf("tx %d: account index is reserved or out of range", i)
+			}
+		}
+		w.Txs[i].Expiry, w.Txs[i].NotBefore = expiry, tx.NotBefore
+		for k, p := range tx.Parties {
+			if k < len(w.Txs[i].Party) {
+				w.Txs[i].PartyActive[k], w.Txs[i].Party[k] = 1, p
+			}
+		}
+		sender := tx.Sender
+		auth := map[uint32]bool{sender: true}
+		for _, p := range tx.Parties {
+			auth[p] = true
+		}
 		tr := TxResult{Applied: make([]bool, len(tx.Actions))}
 		if len(tx.Actions) > cfg.Moves-1 {
 			return nil, nil, fmt.Errorf("tx %d has %d actions, max %d", i, len(tx.Actions), cfg.Moves-1)
@@ -296,13 +383,19 @@ func Build(cfg Config, t *Tree, prevIsGenesis bool, batch Batch, opts Options) (
 			}
 		}
 		w.Txs[i].Active = 1
+		rec.NonceBefore = b.t.Get(tx.Sender).Nonce
 		w.Txs[i].Sender = b.update(tx.Sender, func(a Account) Account { a.Nonce++; return a })
 		w.Txs[i].Moves[0] = b.apply(fee)
+		rec.Moves = make([]MoveRecord, cfg.Moves)
+		rec.Moves[0] = fee.record(true)
 
 		// resolve actions; consecutive atomic actions stand or fall together
 		moves := make([]move, len(tx.Actions))
 		for j, a := range tx.Actions {
 			mv := move{from: tx.Sender, to: a.To, asset: a.Asset, amount: a.Amount, recip: a.Recipient}
+			if a.From != nil {
+				mv.from = *a.From
+			}
 			if o, ok := opts.FromOverride[[2]int{i, j}]; ok {
 				mv.from = o
 			}
@@ -320,6 +413,15 @@ func Build(cfg Config, t *Tree, prevIsGenesis bool, batch Batch, opts Options) (
 				mv.pk = pk
 			default:
 				return nil, nil, fmt.Errorf("tx %d action %d: unknown kind %q", i, j, a.Kind)
+			}
+			if !opts.Unchecked {
+				// the debited account must be the sender or a party; a key is registered on the sender only
+				if !auth[mv.from] || (mv.kind == 3 && mv.from != tx.Sender) {
+					return nil, nil, fmt.Errorf("tx %d action %d: auth: account %d is not the sender or a party of this tx", i, j, mv.from)
+				}
+				if uint64(mv.to) >= uint64(logIdx) {
+					return nil, nil, fmt.Errorf("tx %d action %d: account index is reserved or out of range", i, j)
+				}
 			}
 			moves[j] = mv
 		}
@@ -346,6 +448,7 @@ func Build(cfg Config, t *Tree, prevIsGenesis bool, batch Batch, opts Options) (
 				if ok {
 					w.Txs[i].Moves[1+k] = b.apply(moves[k])
 					tr.Applied[k] = true
+					rec.Moves[1+k] = moves[k].record(true)
 				} else {
 					w.Txs[i].Moves[1+k] = b.noop(tx.Sender)
 				}
@@ -357,6 +460,22 @@ func Build(cfg Config, t *Tree, prevIsGenesis bool, batch Batch, opts Options) (
 		}
 		tr.Included = true
 		res.Txs = append(res.Txs, tr)
+		res.Records[i] = rec
+	}
+
+	// Inclusion: commit the tx records and the batch counter in the log leaf (spec/inclusion.md).
+	leaves := make([]fr.Element, cfg.Txs)
+	for i, r := range res.Records {
+		leaves[i] = RecordLeaf(r, cfg.Parties)
+	}
+	res.TxRoot = TxRoot(leaves)
+	w.Log = b.updateLog(logIdx, LogAccount(res.TxRoot, res.BatchIndex))
+	for i, r := range res.Records {
+		if r != nil {
+			res.Proofs = append(res.Proofs, InclusionProof{
+				BatchIndex: res.BatchIndex, Record: *r, TxIndex: i, TxPath: TxPath(leaves, i), LogPath: t.Path(logIdx),
+			})
+		}
 	}
 
 	res.NewRoot = t.Root()

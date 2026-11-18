@@ -13,14 +13,14 @@
   <span class="net">testnet · qorechain-diana</span>
 </div></header>
 <main class="wrap">
-  <h1>Verify a settlement receipt</h1>
-  <p class="lede">A receipt is a claim. This page re-reads the rollup, the batch, the post-quantum anchor and the signing key from QoreChain and accepts the receipt only if all of it matches. Nothing in the receipt is trusted.</p>
+  <h1>Verify a receipt or an inclusion proof</h1>
+  <p class="lede">A receipt is a claim. This page re-reads the rollup, the batch, the post-quantum anchor and the signing key from QoreChain and accepts the receipt only if all of it matches. Nothing in the receipt is trusted. You can also paste an <b>inclusion proof</b>: it shows one transaction was executed in its batch, checked against the same chain state, without revealing anything else in the batch.</p>
 
   <section class="panel">
     <div class="hd"><h2>Receipt</h2></div>
     <div class="body">
       <label class="drop" id="drop">
-        <textarea id="text" spellcheck="false" placeholder="Paste a receipt (JSON), or drop a .json file here"></textarea>
+        <textarea id="text" spellcheck="false" placeholder="Paste a receipt or an inclusion proof (JSON), or drop a .json file here"></textarea>
       </label>
       <div class="row">
         <button id="go" class="primary">Verify receipt</button>

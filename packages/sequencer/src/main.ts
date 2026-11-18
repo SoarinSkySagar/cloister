@@ -7,6 +7,7 @@
  *   POST /tx            { tx: <hex FrameTx> }        -> { id } (the sighash) or 400 { error }
  *   GET  /tx/<id>                                   -> queued | included (batch, account, applied) | rejected
  *   POST /account       AccountQuery (signed)        -> the caller's own account only (private rollup)
+ *   POST /proof         { query (signed), tx }       -> the inclusion proof of a tx the caller sent or co-signed
  *   GET  /status                                    -> batches, queue length, busy, last error (no balances)
  *   POST /batch                                     -> run a batch now (localhost only)
  *
@@ -74,6 +75,14 @@ createServer(async (req, res) => {
       const state = seq.state();
       const a = state.accounts.find((x) => x.pk_commit === v.pkCommit);
       return send(res, 200, { batches: state.batches, account: a ?? null });
+    }
+    if (req.method === "POST" && url.pathname === "/proof") {
+      // { query: <signed AccountQuery>, tx: <tx id> }: the inclusion proof of a tx the caller sent or co-signed
+      const { query, tx: id } = (await body(req)) as { query: AccountQuery; tx: string };
+      const v = verifyAccountQuery(query, rollupId);
+      if ("error" in v) return send(res, 401, v);
+      const p = seq.proofFor(String(id), v.pkCommit);
+      return send(res, "error" in p ? 404 : 200, p);
     }
     if (req.method === "GET" && url.pathname === "/status") {
       return send(res, 200, { rollup_id: rollupId, batches: seq.state().batches, queued: seq.queueLength(), busy: seq.isBusy(), last_error: seq.lastError });

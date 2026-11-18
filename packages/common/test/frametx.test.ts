@@ -5,14 +5,15 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pqKeyFromSeed } from "@qorechain/qoresign";
 import {
-  ASSET, NEW_ACCOUNT, REPO_ROOT, buildFrameTx, decodeFrameTx, encodeFrameTx, encodeUnsigned, pkCommit, sighash,
-  signFrameTx, signatureErrors, structuralErrors, toLedgerTx, type BuildArgs, type FrameTx,
+  ASSET, MAX_ACTIONS, NEW_ACCOUNT, REPO_ROOT, buildFrameTx, decodeFrameTx, encodeFrameTx, encodeUnsigned, nextFreeIndex, notBeforeOf,
+  partiesOf, pkCommit, sighash, signFrameTx, signatureErrors, signersOf, structuralErrors, toLedgerTx, type BuildArgs, type FrameTx,
 } from "../src/index.ts";
 
 const ids = { chainId: "qorechain-diana", rollupId: "cloister" };
 const key = (n: number) => pqKeyFromSeed(new Uint8Array(32).fill(n));
-const alice = key(1), sponsor = key(2), mallory = key(3);
-const keys = new Map([[5, alice.publicKey], [0, sponsor.publicKey]]);
+const alice = key(1), sponsor = key(2), mallory = key(3), bob = key(4), carol = key(5);
+const keys = new Map([[5, alice.publicKey], [0, sponsor.publicKey], [6, bob.publicKey], [7, carol.publicKey]]);
+const secrets = new Map<number, Uint8Array>([[5, alice.secretKey], [NEW_ACCOUNT, alice.secretKey], [0, sponsor.secretKey], [6, bob.secretKey], [7, carol.secretKey]]);
 const L1 = "qor12jmzemjntpkfr4ler3rdwpemrv3qg7pzxkpxkm";
 
 const cases: Record<string, BuildArgs> = {
@@ -23,11 +24,18 @@ const cases: Record<string, BuildArgs> = {
     { kind: "transfer", to: 1, asset: ASSET.USD, amount: 7n, atomic: true }] },
   "new account, sponsored onboarding": { ...ids, sender: NEW_ACCOUNT, nonce: 0n, expiryBatch: 100n, maxFee: 10_000n, payer: 0, actions: [
     { kind: "register_key", publicKey: alice.publicKey, atomic: false }] },
+  "two-party atomic swap, sponsored": { ...ids, sender: 5, nonce: 7n, expiryBatch: 100n, maxFee: 10_000n, payer: 0, parties: [6], actions: [
+    { kind: "transfer_from", from: 5, to: 6, asset: ASSET.USD, amount: 300n, atomic: true },
+    { kind: "transfer_from", from: 6, to: 5, asset: ASSET.QOR, amount: 400n, atomic: true }] },
+  "three parties, a party withdraws, time-locked": { ...ids, sender: 5, nonce: 8n, expiryBatch: 200n, maxFee: 10_000n, parties: [6, 7], notBefore: 50n, actions: [
+    { kind: "transfer_from", from: 7, to: 5, asset: ASSET.QOR, amount: 11n, atomic: true },
+    { kind: "withdraw_from", from: 6, recipient: L1, amount: 22n, atomic: true },
+    { kind: "transfer", to: 7, asset: ASSET.USD, amount: 33n, atomic: true }] },
 };
 
 function signAll(tx: FrameTx): FrameTx {
-  let t = signFrameTx(tx, tx.sender, alice.secretKey);
-  if (t.sigs.length > 1) t = signFrameTx(t, t.sigs[1]!.signer, sponsor.secretKey);
+  let t = tx;
+  for (const s of tx.sigs) t = signFrameTx(t, s.signer, secrets.get(s.signer)!);
   return t;
 }
 
@@ -75,11 +83,13 @@ test("structural rules", () => {
   const errs = (t: FrameTx) => structuralErrors(t, ids);
   assert.ok(errs({ ...ok, chainId: "x" }).includes("chain_id mismatch"));
   assert.ok(errs({ ...ok, frames: ok.frames.slice(1) }).some((e) => e.includes("VERIFY_SENDER")));
-  assert.ok(errs({ ...ok, frames: [ok.frames[2]!, ...ok.frames.slice(0, 2), ok.frames[3]!] }).some((e) => e.includes("before ACTION")));
+  assert.ok(errs({ ...ok, frames: [ok.frames[2]!, ...ok.frames.slice(0, 2), ok.frames[3]!] }).some((e) => e.includes("ordered")));
   assert.ok(errs({ ...ok, sigs: ok.sigs.slice(0, 1) }).some((e) => e.startsWith("signatures must be")));
   assert.ok(errs({ ...ok, sigs: [...ok.sigs].reverse() }).some((e) => e.startsWith("signatures must be")));
-  const three = buildFrameTx({ ...cases["self-paid transfer"]!, actions: Array(3).fill(cases["self-paid transfer"]!.actions[0]) });
-  assert.ok(errs(three).some((e) => e.includes("at most 2 actions")));
+  const ok3 = buildFrameTx({ ...cases["self-paid transfer"]!, actions: Array(MAX_ACTIONS).fill(cases["self-paid transfer"]!.actions[0]) });
+  assert.deepEqual(errs(ok3), []);
+  const four = buildFrameTx({ ...cases["self-paid transfer"]!, actions: Array(MAX_ACTIONS + 1).fill(cases["self-paid transfer"]!.actions[0]) });
+  assert.ok(errs(four).some((e) => e.includes(`at most ${MAX_ACTIONS} actions`)));
   const badRecipient = buildFrameTx({ ...cases["self-paid transfer"]!, actions: [{ kind: "withdraw", recipient: "qor1short", amount: 1n, atomic: false }] });
   assert.ok(errs(badRecipient).some((e) => e.includes("42-character")));
   const newNoKey = buildFrameTx({ ...cases["self-paid transfer"]!, sender: NEW_ACCOUNT, nonce: 0n });
@@ -107,9 +117,10 @@ test("golden vectors", () => {
     return {
       name,
       input: { ...args, nonce: String(args.nonce), expiryBatch: String(args.expiryBatch), maxFee: String(args.maxFee ?? 0n),
+        notBefore: args.notBefore === undefined ? undefined : String(args.notBefore),
         actions: args.actions.map((a) => a.kind === "register_key" ? { ...a, publicKey: "ML-DSA-87 key from seed 0x01*32" }
           : { ...a, amount: String(a.amount) }),
-        signers: "sender: pqKeyFromSeed(0x01*32), sponsor: pqKeyFromSeed(0x02*32)" },
+        signers: "sender: pqKeyFromSeed(0x01*32), sponsor: pqKeyFromSeed(0x02*32), party 6: pqKeyFromSeed(0x04*32), party 7: pqKeyFromSeed(0x05*32)" },
       expected: {
         enc_unsigned: Buffer.from(encodeUnsigned(unsigned)).toString("hex"),
         sighash: Buffer.from(sighash(unsigned)).toString("hex"),
@@ -119,7 +130,7 @@ test("golden vectors", () => {
     };
   });
   if (process.env.UPDATE_VECTORS || !existsSync(file)) writeFileSync(file, JSON.stringify(got, null, 2) + "\n");
-  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), got);
+  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), JSON.parse(JSON.stringify(got)));
 });
 
 test("bundle round trip", async () => {
@@ -142,4 +153,99 @@ test("account queries: only a fresh signature by the key itself passes", async (
   const forged = { ...signAccountQuery("cloister", alice.publicKey, mallory.secretKey, 1_000_000) };
   assert.ok("error" in verifyAccountQuery(forged, "cloister", 1_000_000));
   assert.ok("error" in verifyAccountQuery({ ...q, ts: q.ts + 1 }, "cloister", 1_000_000));
+});
+
+// ---- multi-party frames (spec/frame-tx.md) ----
+
+const swap = () => buildFrameTx(cases["two-party atomic swap, sponsored"]!);
+const errs = (t: FrameTx) => structuralErrors(t, ids);
+const withFrames = (t: FrameTx, f: (fr: FrameTx["frames"]) => FrameTx["frames"]) => ({ ...t, frames: f(t.frames) });
+
+test("multi-party: parties, guard and signer order", () => {
+  const t = swap();
+  assert.deepEqual(partiesOf(t), [6]);
+  assert.deepEqual(signersOf(t), [5, 6, 0], "sender, parties in frame order, then the sponsor");
+  assert.deepEqual(t.sigs.map((s) => s.signer), [5, 6, 0]);
+  const locked = buildFrameTx(cases["three parties, a party withdraws, time-locked"]!);
+  assert.equal(notBeforeOf(locked), 50n);
+  assert.deepEqual(signersOf(locked), [5, 6, 7], "a self-paid tx needs no extra payer signature");
+  assert.equal(notBeforeOf(t), 0n);
+  const back = decodeFrameTx(encodeFrameTx(signAll(locked)));
+  assert.deepEqual(errs(back), []);
+  assert.deepEqual(signatureErrors(back, (i) => keys.get(i)), []);
+});
+
+test("multi-party: a payer who is also a party signs once", () => {
+  const t = buildFrameTx({ ...cases["two-party atomic swap, sponsored"]!, payer: 6 });
+  assert.deepEqual(signersOf(t), [5, 6]);
+  assert.deepEqual(errs(t), []);
+});
+
+test("multi-party: every signature must verify, and each signer is checked", () => {
+  const signed = signAll(swap());
+  assert.deepEqual(signatureErrors(signed, (i) => keys.get(i)), []);
+  const byMallory = signFrameTx(swap(), 5, secrets.get(5)!);
+  const missingBob = signFrameTx(byMallory, 0, secrets.get(0)!); // bob's slot left empty
+  assert.deepEqual(signatureErrors(missingBob, (i) => keys.get(i)), ["bad signature by account 6"]);
+  const forgedParty = signFrameTx(signFrameTx(signFrameTx(swap(), 5, secrets.get(5)!), 6, mallory.secretKey), 0, secrets.get(0)!);
+  assert.deepEqual(signatureErrors(forgedParty, (i) => keys.get(i)), ["bad signature by account 6"]);
+  // the sighash covers the parties and every leg: changing either invalidates the signatures
+  const retargeted = { ...signed, frames: signed.frames.map((f) => (f.kind === 0x04 && f.params[3] === 5 ? { ...f, params: Uint8Array.from([...f.params.slice(0, 7), 9, ...f.params.slice(8)]) } : f)) };
+  assert.notDeepEqual(sighash(retargeted), sighash(signed));
+  assert.ok(signatureErrors(retargeted, (i) => keys.get(i)).length > 0);
+});
+
+test("multi-party: structural refusals", () => {
+  const t = swap();
+  // signatures: missing, wrong order
+  assert.ok(errs({ ...t, sigs: t.sigs.slice(0, 2) }).some((e) => e.startsWith("signatures must be")));
+  assert.ok(errs({ ...t, sigs: [t.sigs[1]!, t.sigs[0]!, t.sigs[2]!] }).some((e) => e.startsWith("signatures must be")));
+  // a leg debiting an account that is neither the sender nor a party
+  const stranger = buildFrameTx({ ...cases["two-party atomic swap, sponsored"]!, actions: [
+    { kind: "transfer_from", from: 7, to: 5, asset: ASSET.QOR, amount: 1n, atomic: false }] });
+  assert.ok(errs(stranger).some((e) => e.includes("neither the sender nor a party")));
+  // parties: sender as a party, duplicates, too many, invalid index
+  const bad = (parties: number[]) => errs(buildFrameTx({ ...cases["two-party atomic swap, sponsored"]!, parties }));
+  assert.ok(bad([5]).some((e) => e.includes("cannot be the sender")));
+  assert.ok(bad([6, 6]).some((e) => e.includes("distinct")));
+  assert.ok(bad([6, 7, 8, 9]).some((e) => e.includes("at most 3 VERIFY_PARTY")));
+  assert.ok(bad([65535]).some((e) => e.includes("not a valid account index")));
+  // frame order and counts
+  assert.ok(errs(withFrames(t, (f) => [f[1]!, f[0]!, ...f.slice(2)])).some((e) => e.includes("ordered")));
+  assert.ok(errs(withFrames(t, (f) => [f[0]!, f[0]!, ...f.slice(1)])).some((e) => e.includes("exactly one VERIFY_SENDER")));
+  assert.ok(errs(withFrames(t, (f) => [f[0]!, ...f.slice(1, 3), f[2]!, ...f.slice(3)])).some((e) => e.includes("at most one VERIFY_PAYER")));
+  const two = buildFrameTx({ ...cases["three parties, a party withdraws, time-locked"]! });
+  const guard = two.frames.find((f) => f.mode === 5)!;
+  assert.ok(errs(withFrames(two, (f) => [...f.slice(0, 3), guard, ...f.slice(3)])).some((e) => e.includes("at most one GUARD")));
+  assert.ok(errs(withFrames(two, (f) => f.map((x) => (x.mode === 5 ? { ...x, params: new Uint8Array(4) } : x)))).some((e) => e.includes("GUARD params")));
+  // a new account cannot bring parties or *_from legs, and register_key stays sender-only (no register_from kind exists)
+  const newAcct = buildFrameTx({ ...cases["new account, sponsored onboarding"]!, parties: [6] });
+  assert.ok(errs(newAcct).some((e) => e.includes("no parties")));
+  const newFrom = buildFrameTx({ ...cases["new account, sponsored onboarding"]!, actions: [
+    { kind: "register_key", publicKey: alice.publicKey, atomic: false },
+    { kind: "transfer_from", from: 0, to: 1, asset: 0, amount: 1n, atomic: false }] });
+  assert.ok(errs(newFrom).some((e) => e.includes("cannot use transfer_from")));
+});
+
+test("multi-party: prover input carries parties, window and each leg's debited account", () => {
+  const t = signAll(swap());
+  const l = toLedgerTx(t, { relayer: 1 });
+  assert.deepEqual(l.parties, [6]);
+  assert.equal(l.expiry, 100);
+  assert.equal(l.not_before, undefined);
+  assert.deepEqual(l.actions.map((a) => (a.kind === "register_key" ? -1 : a.from)), [5, 6]);
+  const locked = toLedgerTx(signAll(buildFrameTx(cases["three parties, a party withdraws, time-locked"]!)), { relayer: 1 });
+  assert.equal(locked.not_before, 50);
+  assert.deepEqual(locked.actions.map((a) => (a.kind === "register_key" ? -1 : a.from)), [7, 6, undefined]);
+  // an "unbounded" window is capped, never lost to float rounding
+  const forever = toLedgerTx(buildFrameTx({ ...cases["self-paid transfer"]!, expiryBatch: (1n << 64n) - 1n }), { relayer: 1 });
+  assert.equal(forever.expiry, Number.MAX_SAFE_INTEGER);
+});
+
+test("account indexes never reach the reserved log leaf", () => {
+  assert.equal(nextFreeIndex([0, 1, 2]), 3);
+  assert.throws(() => nextFreeIndex([0, 65534]), /no free account index/);
+  assert.equal(nextFreeIndex([0, 65535]), 1, "the reserved leaf is not an account");
+  const noLog = buildFrameTx({ ...cases["self-paid transfer"]!, actions: [{ kind: "transfer", to: 65535, asset: 0, amount: 1n, atomic: false }] });
+  assert.ok(errs(noLog).some((e) => e.includes("invalid account index")));
 });
