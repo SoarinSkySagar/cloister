@@ -24,7 +24,10 @@
     "spike:stop-dev": "pnpm --filter @cloister/spike stop-dev",
     "spike:ledger": "pnpm --filter @cloister/spike ledger",
     "wallet": "pnpm --silent --filter @cloister/wallet wallet",
-    "sequencer": "pnpm --filter @cloister/sequencer start"
+    "sequencer": "pnpm --filter @cloister/sequencer start",
+    "relayer": "pnpm --filter @cloister/relayer start",
+    "watchtower": "pnpm --filter @cloister/watchtower start",
+    "explorer": "pnpm --filter @cloister/explorer start"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

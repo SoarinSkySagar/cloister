@@ -1,0 +1,17 @@
+{
+  "name": "@cloister/relayer",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@cloister/common": "workspace:*"
+  },
+  "devDependencies": {
+    "@qorechain/qoresign": "0.2.0"
+  }
+}

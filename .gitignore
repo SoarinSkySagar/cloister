@@ -46,3 +46,4 @@ circuits/setup/cloister*/pk.bin
 circuits/setup/cloister*/ccs.bin
 circuits/setup/cloister*/state.json
 circuits/setup/cloister*/keys.json
+packages/explorer/data.json
