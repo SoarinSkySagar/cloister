@@ -93,3 +93,20 @@ test("shape rules: newline injection, unsorted or duplicate checks, pass with a 
   assert.deepEqual(bad({}), []);
   assert.throws(() => verdictMessage({ ...base, scope: "x" as "bundle" }), /invalid verdict/);
 });
+
+test("a chain that cannot be read is 'unverifiable', not 'invalid'", async () => {
+  const v = signVerdict(base, wt.secretKey);
+  const down = { network: { chainId: "qorechain-diana" }, rest: { getRollup: async () => { throw new Error("fetch failed"); }, getBatch: chain().rest.getBatch, getPqcAccount: chain().rest.getPqcAccount } } as never;
+  const r = await verifyVerdict(v, down);
+  assert.equal(r.valid, false);
+  assert.equal(r.unverifiable, true);
+});
+
+test("a transient chain error is retried", async () => {
+  const v = signVerdict(base, wt.secretKey);
+  let calls = 0;
+  const c = chain();
+  const flaky = { network: c.network, rest: { ...c.rest, getRollup: async () => { if (calls++ < 2) throw new Error("500"); return c.rest.getRollup(); } } } as never;
+  assert.equal((await verifyVerdict(v, flaky)).valid, true);
+  assert.equal(calls, 3);
+});

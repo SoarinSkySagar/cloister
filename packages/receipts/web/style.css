@@ -29,3 +29,5 @@ table { width:100%; border-collapse:collapse; } td,th { text-align:left; padding
 .chips { display:flex; flex-wrap:wrap; gap:8px; padding:16px; } .chips button { font-family:var(--mono); font-size:12.5px; }
 .foot { color:var(--dim); font-size:12px; padding:20px 16px 40px; }
 @media (max-width:640px){ .kv { grid-template-columns:1fr; } .kv > div:nth-child(odd){ border-bottom:0; padding-bottom:0; } .or { margin-left:0; width:100%; } }
+.co { border-top:1px solid var(--line); } .cohead { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:8px; padding:14px 16px 6px; } .cohead h3 { margin:0; font-size:15px; }
+.co td { font-size:13px; }

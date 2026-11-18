@@ -35,6 +35,11 @@ createServer(async (req, res) => {
       const files = (await readdir(RECEIPTS)).filter((f) => /^[a-z0-9-]+-\d+\.json$/.test(f)).sort();
       return send(200, JSON.stringify(files));
     }
+    if (p.startsWith("/verdicts/")) {
+      const f = p.slice(10);
+      if (!/^[a-z0-9-]+-\d+\.verdicts\.json$/.test(f)) return send(404, JSON.stringify({ error: "not found" }));
+      try { return send(200, await readFile(join(RECEIPTS, f))); } catch { return send(404, JSON.stringify({ error: "no verdicts" })); }
+    }
     if (p.startsWith("/receipts/")) {
       const f = p.slice(10);
       if (!/^[a-z0-9-]+-\d+\.json$/.test(f)) return send(404, JSON.stringify({ error: "not found" }));

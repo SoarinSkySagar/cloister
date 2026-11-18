@@ -1,12 +1,13 @@
 import { buildSettlementReceipt, createRdkClient, type SettlementReceipt } from "@qorechain/rdk";
-import { parseReceipt, verifyReceipt, type Verdict } from "../src/verify.ts";
+import { parseReceipt, verifyReceipt, checkVerdicts, summarize, type CoSignature, type ReceiptVerdict } from "../src/verify.ts";
+import { parseVerdicts } from "../src/verdict.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const client = createRdkClient({ network: "testnet", endpoints: { rest: `${location.origin}/chain`, rpc: `${location.origin}/rpc` } });
 const json = (o: unknown) => JSON.stringify(o, (_k, v) => (typeof v === "bigint" ? v.toString() : v), 2);
 
-function render(r: SettlementReceipt | undefined, v: Verdict, problem?: string) {
+function render(r: SettlementReceipt | undefined, v: ReceiptVerdict, problem?: string) {
   const box = $("result");
   box.hidden = false;
   if (!r) {
@@ -32,11 +33,42 @@ function render(r: SettlementReceipt | undefined, v: Verdict, problem?: string) 
   box.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
+function coHtml(co: CoSignature[] | undefined): string {
+  if (!co) return "";
+  const head = `<div class="cohead"><h3>Member watchtowers</h3><span class="muted">${esc(summarize(co))}</span></div>`;
+  if (!co.length) return `<div class="co">${head}<p class="note">No member has published a verdict for this batch. The receipt above shows settlement only: it does not show that anyone with access to the sealed data checked it.</p></div>`;
+  const rows = co.map(({ verdict: v, check }) => {
+    const state = check.unverifiable ? `<span class="pill">could not verify</span>` : !check.valid ? `<span class="pill bad">invalid</span>` : check.result === "pass" ? `<span class="pill ok">pass</span>` : `<span class="pill bad">reports a failure</span>`;
+    const failed = v.checks.filter((c) => !c.ok).map((c) => c.name);
+    return `<tr><td class="mono">${esc(v.watchtower)}</td><td>${state}</td><td class="muted">${esc(v.scope === "link-only" ? "hash link only (pre-bundle batch)" : v.checks.map((c) => c.name).join(", "))}</td>
+      <td class="muted mono">${esc(new Date(v.signedAt * 1000).toISOString().slice(0, 16).replace("T", " "))}</td></tr>
+      ${!check.valid ? `<tr><td colspan="4" class="muted">${esc(check.problems.join("; "))}</td></tr>` : failed.length ? `<tr><td colspan="4" class="muted">failed: ${esc(failed.join(", "))}</td></tr>` : ""}`;
+  }).join("");
+  return `<div class="co">${head}<table><thead><tr><th>Signer</th><th>Verdict</th><th>Checked</th><th>Signed (UTC)</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="note">Each verdict is an ML-DSA-87 signature by a current member of the rollup. The signer's key is read from the chain, not from the verdict, and the verdict must name the same state root and data hash the chain holds. A member can still sign something false, so this adds accountability, not certainty.</div></div>`;
+}
+
+async function loadCo(r: SettlementReceipt): Promise<CoSignature[] | undefined> {
+  try {
+    const res = await fetch(`verdicts/${encodeURIComponent(`${r.rollupId}-${r.batchIndex}`)}.verdicts.json`);
+    if (res.status === 404) return [];
+    if (!res.ok) return undefined;
+    const pv = parseVerdicts(await res.text());
+    return "error" in pv ? undefined : await checkVerdicts(r, pv.verdicts, client);
+  } catch { return undefined; }
+}
+
 async function run(text: string) {
   const p = parseReceipt(text);
   if ("error" in p) return render(undefined, { valid: false, mode: "", checks: [] }, p.error);
   $("go").setAttribute("disabled", "");
-  try { render(p.receipt, await verifyReceipt(p.receipt, client)); } finally { $("go").removeAttribute("disabled"); }
+  try {
+    render(p.receipt, await verifyReceipt(p.receipt, client));
+    $("result").insertAdjacentHTML("beforeend", `<div id="co-slot"><p class="note muted">Looking for member watchtower verdicts…</p></div>`);
+    const co = await loadCo(p.receipt);
+    const slot = document.getElementById("co-slot");
+    if (slot) slot.innerHTML = co === undefined ? `<p class="note muted">Could not load verdicts for this batch.</p>` : coHtml(co);
+  } finally { $("go").removeAttribute("disabled"); }
 }
 
 $("go").addEventListener("click", () => void run(($("text") as HTMLTextAreaElement).value));

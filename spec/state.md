@@ -17,6 +17,10 @@ empty leaf = 0
 - **Field:** every value is an element of `F_r` (BLS12-381 scalar field). The state root is therefore always below `r`, as the chain requires.
 - **Balances:** `u64`, enforced in the circuit with 64-bit range checks.
 
+## Reserved log leaf
+
+The leaf at index `LOG_INDEX = 2^depth - 1` is not an account. It holds the transaction root of the latest batch (`pk_commit = tx_root`, all other fields 0). Accounts are never assigned this index and no account update may touch it. Defined in [inclusion.md](inclusion.md).
+
 ## Assets
 
 | id | Asset | Withdrawable to L1 |

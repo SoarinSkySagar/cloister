@@ -13,7 +13,7 @@ import {
   CHAIN_ID, actionsOf, decodeBundle, pkCommit, signatureErrors, structuralErrors, type FrameTx,
 } from "@cloister/common";
 
-export interface BatchView { batch_index: string; tx_count: string; data_hash: string; status: string }
+export interface BatchView { batch_index: string; tx_count: string; state_root: string; data_hash: string; status: string }
 export interface Finding { check: string; ok: boolean; detail: string }
 
 export function checkBatch(a: {

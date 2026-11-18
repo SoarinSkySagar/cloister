@@ -4,9 +4,10 @@
  * batch, the anchor and the signing key from the chain, so a fabricated or
  * altered receipt cannot pass.
  */
+import { verifyVerdict, type Verdict, type VerdictResult } from "./verdict.ts";
 import { receiptSchemaError, verifySettlementReceipt, type RdkClient, type SettlementReceipt } from "@qorechain/rdk";
 
-export interface Verdict {
+export interface ReceiptVerdict {
   valid: boolean;
   mode: string;
   checks: { name: string; ok: boolean; detail: string }[];
@@ -29,7 +30,7 @@ export function parseReceipt(text: string): { receipt: SettlementReceipt } | { e
   return bad ? { error: bad } : { receipt: r };
 }
 
-export async function verifyReceipt(receipt: SettlementReceipt, client: RdkClient): Promise<Verdict> {
+export async function verifyReceipt(receipt: SettlementReceipt, client: RdkClient): Promise<ReceiptVerdict> {
   try {
     const res = (await verifySettlementReceipt(receipt, { client })) as { valid: boolean; mode?: string; checks?: Record<string, unknown>; reason?: string; error?: string };
     const checks = Object.entries(res.checks ?? {}).map(([name, v]) => {
@@ -40,4 +41,26 @@ export async function verifyReceipt(receipt: SettlementReceipt, client: RdkClien
   } catch (e) {
     return { valid: false, mode: "error", checks: [], error: (e as Error).message };
   }
+}
+
+export interface CoSignature { verdict: Verdict; check: VerdictResult }
+
+/** Verify the member watchtower verdicts published for a receipt's batch. A verdict for another batch is refused, not ignored. */
+export async function checkVerdicts(receipt: SettlementReceipt, verdicts: Verdict[], client: RdkClient): Promise<CoSignature[]> {
+  return Promise.all(verdicts.map(async (verdict) => {
+    if (verdict.rollupId !== receipt.rollupId || verdict.batchIndex !== receipt.batchIndex) {
+      return { verdict, check: { valid: false, problems: [`verdict is for ${verdict.rollupId} batch ${verdict.batchIndex}, not this receipt`] } };
+    }
+    return { verdict, check: await verifyVerdict(verdict, client) };
+  }));
+}
+
+/** One line for humans: how many member watchtowers vouch for the batch. */
+export function summarize(co: CoSignature[]): string {
+  const ok = co.filter((c) => c.check.valid && c.check.result === "pass").length;
+  const failed = co.filter((c) => c.check.valid && c.check.result === "fail").length;
+  const unv = co.filter((c) => c.check.unverifiable).length;
+  const bad = co.filter((c) => !c.check.valid && !c.check.unverifiable).length;
+  if (!co.length) return "no member watchtower verdict published";
+  return [`checked by ${ok} member watchtower(s)`, failed ? `${failed} reported a FAILED check` : "", bad ? `${bad} verdict(s) INVALID` : "", unv ? `${unv} could not be verified (chain unreachable)` : ""].filter(Boolean).join("; ");
 }

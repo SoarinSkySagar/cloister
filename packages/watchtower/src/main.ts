@@ -1,13 +1,15 @@
 /**
- *   pnpm --filter @cloister/watchtower start --id cloister-dev-2 [--state path/to/state.json] [--from 0] [--json out.json]
+ *   pnpm watchtower --id cloister-dev-2 [--sign] [--explorer path] [--json path] [--from n]
+ *   (older usage) pnpm --filter @cloister/watchtower start --id cloister-dev-2 [--state path/to/state.json] [--from 0] [--json out.json]
  * Checks every finalized batch of the rollup as a member (role "watchtower"). Exit 1 if any check fails.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  REPO_ROOT, pkCommit, addressFor, allIdentities, decodeBundle, kemKeypairFor, loadEnv, testnetClient,
+  REPO_ROOT, pkCommit, addressFor, identity, allIdentities, decodeBundle, kemKeypairFor, loadEnv, testnetClient,
 } from "@cloister/common";
 import { openEnvelope } from "@qorechain/rdk";
+import { normRoot, signVerdict, sortChecks, type Verdict } from "@cloister/receipts/verdict";
 import { actionsOf, payerOf, sighash, type FrameTx } from "@cloister/common";
 import { checkBatch, keyResolver, type BatchView } from "./check.ts";
 import { postedBytes } from "./l1.ts";
@@ -23,6 +25,22 @@ const env = loadEnv();
 const member = (await addressFor("watchtower", env))!;
 const kem = kemKeypairFor("watchtower", env);
 if (!member || !kem) throw new Error("watchtower mnemonic / ML-KEM seed missing in .env");
+const signer = args.includes("--sign") ? await identity(rdk, "watchtower", env) : undefined;
+if (signer && signer.address !== member) throw new Error("watchtower identity differs from the member address");
+const verdictFile = (i: number) => join(REPO_ROOT, "receipts", `${rollupId}-${i}.verdicts.json`);
+/** Sign this batch's findings and merge the verdict into receipts/<rollup>-<batch>.verdicts.json (one entry per watchtower). */
+function publishVerdict(i: number, bv: BatchView, findings: { check: string; ok: boolean }[]) {
+  const legacy = findings.some((x) => x.check === "legacy");
+  const v = signVerdict({
+    version: 1, chainId: "qorechain-diana", rollupId, batchIndex: i, stateRoot: normRoot(bv.state_root), dataHash: normRoot(bv.data_hash),
+    watchtower: member, result: findings.every((x) => x.ok) ? "pass" : "fail", scope: legacy ? "link-only" : "bundle",
+    checks: sortChecks(findings.map((x) => ({ name: x.check, ok: x.ok }))), signedAt: Math.floor(Date.now() / 1000),
+  }, signer!.secretKey);
+  let all: Verdict[] = [];
+  try { all = JSON.parse(readFileSync(verdictFile(i), "utf8")) as Verdict[]; } catch { /* first verdict for this batch */ }
+  all = [...all.filter((x) => x.watchtower !== member), v].sort((a, b) => (a.watchtower < b.watchtower ? -1 : 1));
+  writeFileSync(verdictFile(i), JSON.stringify(all, null, 2) + "\n");
+}
 const state = JSON.parse(readFileSync(statePath, "utf8")) as { batches: number; accounts: { index: number; pk_commit: string }[] };
 const known = (await allIdentities(rdk, env)).map((i) => i.publicKey);
 
@@ -64,6 +82,7 @@ for (let i = Number(flag("--from") ?? 0); i < state.batches; i++) {
   if (!ok) bad++;
   console.log(`batch ${i} [${bv.status}] ${ok ? "OK" : "FAIL"}  ` + findings.map((x) => `${x.ok ? "✓" : "✗"}${x.check}`).join(" "));
   for (const x of findings.filter((y) => !y.ok)) console.log(`    ${x.check}: ${x.detail}`);
+  if (signer) publishVerdict(i, bv, findings);
   report.push({ batch: i, status: bv.status, ok, findings });
   explorer.batches.push({ ...bv, findings, ok, txs: txs.map(txView) });
 }
@@ -82,4 +101,5 @@ if (ex) {
 const out = flag("--json");
 if (out) writeFileSync(out, JSON.stringify({ rollup_id: rollupId, checked_at: new Date().toISOString(), batches: report }, null, 2));
 console.log(bad ? `${bad} batch(es) failed` : "all checked batches pass");
+if (signer) console.log(`verdicts signed by ${member} -> receipts/${rollupId}-<batch>.verdicts.json`);
 process.exit(bad ? 1 : 0);

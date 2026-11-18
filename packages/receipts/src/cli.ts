@@ -7,7 +7,9 @@
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createRdkClient, buildSettlementReceipt } from "@qorechain/rdk";
-import { parseReceipt, verifyReceipt } from "./verify.ts";
+import { parseReceipt, verifyReceipt, checkVerdicts, summarize } from "./verify.ts";
+import { parseVerdicts } from "./verdict.ts";
+import { existsSync } from "node:fs";
 
 const [cmd, ...args] = process.argv.slice(2);
 const flag = (n: string) => { const i = args.indexOf(n); return i === -1 ? undefined : args[i + 1]; };
@@ -15,7 +17,7 @@ const client = createRdkClient({ network: "testnet" });
 const REC = join(import.meta.dirname, "..", "..", "..", "receipts");
 
 if (cmd === "verify") {
-  const files = args.includes("--all") ? readdirSync(REC).filter((f) => f.endsWith(".json")).sort().map((f) => join(REC, f)) : args.filter((a) => !a.startsWith("--"));
+  const files = args.includes("--all") ? readdirSync(REC).filter((f) => f.endsWith(".json") && !f.endsWith(".verdicts.json")).sort().map((f) => join(REC, f)) : args.filter((a) => !a.startsWith("--"));
   if (!files.length) throw new Error("usage: verify <receipt.json ...> | --all");
   let bad = 0;
   for (const f of files) {
@@ -24,6 +26,18 @@ if (cmd === "verify") {
     const v = await verifyReceipt(p.receipt, client);
     console.log(`${v.valid ? "VALID  " : "INVALID"} ${p.receipt.rollupId} batch ${p.receipt.batchIndex}  (${v.mode})${v.valid ? "" : "  " + (v.error ?? v.checks.filter((c) => !c.ok).map((c) => c.name).join(", "))}`);
     if (!v.valid) bad++;
+    const vf = f.replace(/\.json$/, ".verdicts.json");
+    if (existsSync(vf)) {
+      const pv = parseVerdicts(readFileSync(vf, "utf8"));
+      if ("error" in pv) { console.log(`         verdicts: ${pv.error}`); bad++; continue; }
+      const co = await checkVerdicts(p.receipt, pv.verdicts, client);
+      console.log(`         ${summarize(co)}`);
+      for (const c of co) {
+        if (c.check.unverifiable) { console.log(`         COULD NOT VERIFY verdict by ${c.verdict.watchtower}: ${c.check.problems.join("; ")}`); bad++; }
+        else if (!c.check.valid) { console.log(`         INVALID verdict by ${c.verdict.watchtower}: ${c.check.problems.join("; ")}`); bad++; }
+        else if (c.check.result === "fail") { console.log(`         WARNING ${c.verdict.watchtower} reports failed checks: ${c.verdict.checks.filter((x) => !x.ok).map((x) => x.name).join(", ")}`); bad++; }
+      }
+    } else console.log("         no member watchtower verdict published");
   }
   console.log(bad ? `${bad} invalid` : `all ${files.length} receipt(s) valid`);
   process.exit(bad ? 1 : 0);

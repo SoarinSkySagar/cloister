@@ -73,20 +73,35 @@ export const sortChecks = (c: Check[]) => [...c].sort((a, b) => (a.name < b.name
 
 export interface VerdictResult {
   valid: boolean;
+  /** The chain could not be read (network or node error), so the verdict is neither accepted nor shown to be wrong. */
+  unverifiable?: boolean;
   /** Present when the signature, key, membership and chain binding all hold. */
   result?: "pass" | "fail";
   problems: string[];
 }
 
 /** Accept a verdict only per spec/verdict.md: key from the chain, signer a member, roots as the chain holds them. */
+async function retry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < tries; i++) {
+    try { return await fn(); } catch (e) { last = e; if (i < tries - 1) await new Promise((r) => setTimeout(r, 400 * (i + 1))); }
+  }
+  throw last;
+}
+
 export async function verifyVerdict(v: Verdict, client: RdkClient): Promise<VerdictResult> {
   const problems: string[] = [];
   const shape = verdictShapeErrors(v);
   if (shape.length) return { valid: false, problems: shape };
   try {
-    const [rollup, batch, account] = await Promise.all([
-      client.rest.getRollup(v.rollupId), client.rest.getBatch(v.rollupId, v.batchIndex), client.rest.getPqcAccount(v.watchtower),
-    ]);
+    let rollup, batch, account;
+    try {
+      [rollup, batch, account] = await Promise.all([
+        retry(() => client.rest.getRollup(v.rollupId)), retry(() => client.rest.getBatch(v.rollupId, v.batchIndex)), retry(() => client.rest.getPqcAccount(v.watchtower)),
+      ]);
+    } catch (e) {
+      return { valid: false, unverifiable: true, problems: [`could not read the chain: ${(e as Error).message}`] };
+    }
     if (client.network.chainId !== v.chainId) problems.push(`verdict is for chain ${v.chainId}, not ${client.network.chainId}`);
     if (!rollup.members.includes(v.watchtower)) problems.push("signer is not a current member of the rollup");
     if (normRoot(batch.stateRoot) !== v.stateRoot) problems.push("state root differs from the chain's");
@@ -95,7 +110,7 @@ export async function verifyVerdict(v: Verdict, client: RdkClient): Promise<Verd
     if (!pk.length) problems.push("signer has no ML-DSA key on chain");
     else if (!pqVerify(pk, verdictMessage(v), unhex(v.signature))) problems.push("bad signature");
   } catch (e) {
-    problems.push(`chain lookup failed: ${(e as Error).message}`);
+    problems.push(`verification error: ${(e as Error).message}`);
   }
   return problems.length ? { valid: false, problems } : { valid: true, result: v.result, problems };
 }
