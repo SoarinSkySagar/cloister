@@ -63,7 +63,22 @@ sighash = SHAKE-256/32( "cloister/frametx/v1" ‖ enc_unsigned(tx) )
 5. Payer = the VERIFY_PAYER account if present, otherwise the sender. The fee charged is `min(max_fee, fee_schedule(tx))` in `fee_asset`, debited from the payer and credited to the **relayer account** (the rollup account mapped to the L1 poster of the envelope).
 6. ACTION frames apply in order. Consecutive frames with the atomic flag apply all-or-nothing. A non-atomic failing frame is skipped.
 
-**OPEN:**
-- `fee_schedule` (flat per-tx vs per-byte)
-- relayer L1-address → account mapping (registered by a `register_key` frame plus a binding message)
-- how a fresh account gets its index (proposed: `register_key` with `sender = 0xFFFFFFFF`, and the sequencer assigns the next free index)
+**Decided (18 Nov), implemented in `packages/common/src/frametx.ts`:**
+- **Fee:** flat. The fee charged is exactly `max_fee`, which the user chooses. The relayer refuses txs below its minimum. (Rule 5's `min(max_fee, fee_schedule)` therefore simplifies to `max_fee`.)
+- **Relayer account:** fixed in the rollup's config (account 1 on `cloister-dev-2`). It receives every fee.
+- **New accounts:** `sender = 0xFFFFFFFF`, `nonce = 0`, and the first action is `register_key`. The sender signature is checked against the key in that frame. The sequencer assigns the lowest index above every index in use, in bundle order, so watchtowers can recompute it.
+- **Keys:** a Cloister account uses its owner's L1 ML-DSA-87 key (one mnemonic for both layers), so `pk_commit` is derivable from the chain's PQC registry.
+- **Circuit v1 limits:** at most 2 ACTION frames, withdraw recipients are 42-character `qor1` addresses, and `expiry_batch` is checked by the sequencer.
+- Signature slots are zero-filled to 4627 bytes before signing, so the sighash is known before anyone signs and sender and sponsor sign the same bytes.
+
+## Batch bundle (the sealed post)
+
+A batch's `data_hash` binds a single post. That post is the ML-KEM envelope of a bundle of the **signed** frame txs, in execution order:
+
+```
+Bundle := "cloister/bundle/v1" ‖ u64 batch_index ‖ u8 count ‖ lp(FrameTx)[count]
+```
+
+Every member (the watchtower) can open it, re-verify every ML-DSA signature and re-execute the batch. On a dedicated rollup only the sequencer may post, so wallets hand their signed tx to the relayer or sequencer. On a based rollup the relayer posts it.
+
+Golden vectors: [`vectors/frame-tx.json`](vectors/frame-tx.json) (encodings and sighashes, deterministic keys).

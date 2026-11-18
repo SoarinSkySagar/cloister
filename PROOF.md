@@ -27,3 +27,7 @@ Every transaction that proves a feature works goes here, newest last.
 | 2026-11-18 | cloister-dev-2 batch 1: withdrawal #1 of 1.02 QOR paid on L1 from a leaf proven inside circuit v1 | `9AA724CBAE8174DDD181F0DB4C0CB5DC2BBE8DC7C3CFEB311672A460571A6E42` | testnet |
 | 2026-11-18 | Settlement receipt for cloister-dev-2 batch 0 verified against live chain state (ML-DSA-87 anchor, key read from chain): valid | receipts/cloister-dev-2-0.json | testnet |
 | 2026-11-18 | Settlement receipt for cloister-dev-2 batch 1 verified against live chain state (ML-DSA-87 anchor, key read from chain): valid | receipts/cloister-dev-2-1.json | testnet |
+| 2026-11-18 | cloister-dev-2 batch 2: sealed batch input posted (20237-byte ML-KEM-1024 envelope, members only) | `C0A1AD090CC42375F4DECBF197AA201AFEF27E5010605A5B90E1100E30EFA00B` | testnet |
+| 2026-11-18 | cloister-dev-2 batch 2 (frame txs): **circuit v1** Groth16 proof verified on chain (Poseidon2 account tree, 2 frame txs, 1 withdrawal(s) with the SHAKE-256 root computed in-circuit); status finalized | `DB88318D506743C07F5CCC81900E47BCA61334945AA7F53752B6CC38F9EE325D` | testnet |
+| 2026-11-18 | cloister-dev-2 batch 2: withdrawal #0 of 1 QOR paid on L1 from a leaf proven inside circuit v1 | `809371B5EA98D935C3E75A67022824E65CD39434DDDCE612F127C44B7B7657CC` | testnet |
+| 2026-11-18 | Settlement receipt for cloister-dev-2 batch 2 verified against live chain state (ML-DSA-87 anchor, key read from chain): valid | receipts/cloister-dev-2-2.json | testnet |

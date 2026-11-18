@@ -21,7 +21,9 @@ import {
   submitBatchMsg, withdrawalsTree, zkPublicInputErrors,
 } from "@qorechain/rdk";
 import {
-  CHAIN_ID, REPO_ROOT, addressFor, formatQor, loadEnv, mnemonicFor, testnetClient, txClientFor, type Role,
+  CHAIN_ID, NEW_ACCOUNT, REPO_ROOT, addressFor, allIdentities, encodeBundle, formatQor, frameTxFromHex, loadEnv,
+  mnemonicFor, nextFreeIndex, signatureErrors, structuralErrors, testnetClient, toLedgerTx, txClientFor,
+  type RollupState, type Role,
 } from "@cloister/common";
 
 const [cmd, ...args] = process.argv.slice(2);
@@ -77,7 +79,7 @@ if (cmd !== "batch") throw new Error("usage: ledger config|setup|batch --id cloi
 // ---- batch ----
 const step = flag("--step");
 const [watchtower, relayer] = [(await addressFor("watchtower", env))!, (await addressFor("relayer", env))!];
-let batch: object;
+let batch: { txs?: unknown[] };
 if (step === "onboard") {
   batch = { txs: [
     { sender: 0, payer: 0, relayer: 1, fee_asset: 0, fee: 0, actions: [
@@ -100,7 +102,9 @@ if (step === "onboard") {
       { kind: "withdraw", recipient: relayer, amount: 1_020_000 },
     ] },
   ] };
-} else throw new Error("--step onboard|withdraw");
+} else if (flag("--txs")) {
+  batch = {}; // filled from the signed frame txs below, once the state is loaded
+} else throw new Error("--step onboard|withdraw, or --txs a.hex,b.hex");
 
 const state = JSON.parse(readFileSync(join(setupDir, "state.json"), "utf8")) as { batches: number; root: string };
 let rollup = await rdk.rest.getRollup(rollupId).catch((e) => {
@@ -128,8 +132,41 @@ if (rollup.members.join() !== memberAddrs.join() && (SEND || rollup.members.leng
   }
 }
 
-// Seal the batch input itself: the post IS the batch's transactions, readable by members only.
-const plaintext = new TextEncoder().encode(JSON.stringify({ kind: "cloister-batch/v1", batch_index: batchIndex, ...batch }));
+// Signed frame txs from the wallet: check them as the sequencer would, then map them
+// to the prover input. The sealed post is then the bundle of signed txs itself, so any
+// member (the watchtower) can re-verify every signature and re-execute the batch.
+let plaintext: Uint8Array;
+const txFiles = flag("--txs")?.split(",");
+if (txFiles) {
+  const full = JSON.parse(readFileSync(join(setupDir, "state.json"), "utf8")) as RollupState;
+  const ids = await allIdentities(rdk, env);
+  const keyOf = (i: number) => {
+    const a = full.accounts.find((x) => x.index === i);
+    return a ? ids.find((id) => id.pkCommit === a.pk_commit)?.publicKey : undefined;
+  };
+  const frameTxs = txFiles.map((f) => frameTxFromHex(readFileSync(f, "utf8")));
+  const used = new Set(full.accounts.map((a) => a.index));
+  const nonces = new Map(full.accounts.map((a) => [a.index, BigInt(a.nonce)]));
+  batch = { txs: frameTxs.map((ftx, i) => {
+    const errs = [...structuralErrors(ftx, { chainId: CHAIN_ID, rollupId }), ...signatureErrors(ftx, keyOf)];
+    if (BigInt(batchIndex) > ftx.expiryBatch) errs.push(`expired at batch ${ftx.expiryBatch}`);
+    let senderIndex: number | undefined;
+    if (ftx.sender === NEW_ACCOUNT) {
+      senderIndex = nextFreeIndex(used);
+      used.add(senderIndex);
+      nonces.set(senderIndex, 0n);
+    }
+    const s = senderIndex ?? ftx.sender;
+    if ((nonces.get(s) ?? -1n) !== ftx.nonce) errs.push(`nonce ${ftx.nonce}, account #${s} expects ${nonces.get(s)}`);
+    if (errs.length) throw new Error(`tx ${i} (${txFiles[i]}) refused: ${errs.join("; ")}`);
+    nonces.set(s, ftx.nonce + 1n);
+    console.log(`tx ${i}: ${txFiles[i]} ok (sender #${s}${senderIndex !== undefined ? ", new account" : ""}, ${ftx.sigs.length} ML-DSA-87 signature(s) verified)`);
+    return toLedgerTx(ftx, { relayer: 1, senderIndex });
+  }) };
+  plaintext = encodeBundle(batchIndex, frameTxs);
+} else {
+  plaintext = new TextEncoder().encode(JSON.stringify({ kind: "cloister-batch/v1", batch_index: batchIndex, ...batch }));
+}
 const recipients = await Promise.all(rollup.members.map(async (member) => {
   const kem = await rdk.rest.getKemKey(member);
   if (!kem) throw new Error(`${member} has no ML-KEM key`);
@@ -142,7 +179,7 @@ if (recipients.length) {
   const err = envelopeMembershipError(envelope, { membersEpoch: rollup.membersEpoch, members: recipients });
   if (err) throw new Error(`envelope refused: ${err}`);
   sha = createHash("sha256").update(envelope).digest("hex");
-  console.log(`sealed batch ${batchIndex} (${step}): ${plaintext.length} B plaintext -> ${envelope.length} B envelope, sha256 ${sha.slice(0, 16)}…`);
+  console.log(`sealed batch ${batchIndex} (${step ?? "frame txs"}): ${plaintext.length} B plaintext -> ${envelope.length} B envelope, sha256 ${sha.slice(0, 16)}…`);
 } else {
   sha = createHash("sha256").update(plaintext).digest("hex"); // dry run before members exist
   console.log("(dry run: no members yet, proving against the plaintext hash)");
@@ -205,7 +242,7 @@ const settled = await rdk.rest.getBatch(rollupId, batchIndex);
 console.log(`submitted batch ${batchIndex}: ${res.transactionHash}, status ${settled.status}`);
 copyFileSync(join(out, "next-state.json"), join(setupDir, "state.json"));
 proofLine(
-  `${rollupId} batch ${batchIndex} (${step}): **circuit v1** Groth16 proof verified on chain (Poseidon2 account tree, ${result.tx_count} frame txs, ${withdrawals.length} withdrawal(s) with the SHAKE-256 root computed in-circuit); status ${settled.status}`,
+  `${rollupId} batch ${batchIndex} (${step ?? "frame txs"}): **circuit v1** Groth16 proof verified on chain (Poseidon2 account tree, ${result.tx_count} frame txs, ${withdrawals.length} withdrawal(s) with the SHAKE-256 root computed in-circuit); status ${settled.status}`,
   `\`${res.transactionHash}\``,
 );
 
