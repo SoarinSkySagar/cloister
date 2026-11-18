@@ -38,3 +38,18 @@ Every transaction that proves a feature works goes here, newest last.
 | 2026-11-18 | cloister-dev-2 batch 4: sequencer service, 1 frame tx(s), 0 withdrawal(s), circuit v1 proof verified on chain; status finalized | `70414F431AE2398DEC968712787FBBFBC6EC4715A6D3C7ADCA6AFB1B0577DA82` | testnet |
 | 2026-11-18 | Settlement receipt for cloister-dev-2 batch 3 verified against live chain state (ML-DSA-87 anchor, key read from chain): valid | receipts/cloister-dev-2-3.json | testnet |
 | 2026-11-18 | Settlement receipt for cloister-dev-2 batch 4 verified against live chain state (ML-DSA-87 anchor, key read from chain): valid | receipts/cloister-dev-2-4.json | testnet |
+| 2026-11-18 | cloister-dev-2 batch 5: sealed bundle of 1 signed frame tx(s) posted (15440 B, members only) | `0C82D3C83042191C9B4F6D4EDCBB676F6909AA7A2D32DFABD8D9D3421CB33ABC` | testnet |
+| 2026-11-18 | cloister-dev-2 batch 5: sequencer service, 1 frame tx(s), 0 withdrawal(s), circuit v1 proof verified on chain; status finalized | `B559503DC36DDE0EDEBB094A8BD2C3EBB37CB0726DECABC324C0EFF3C134AAAA` | testnet |
+| 2026-11-18 | cloister-dev-2 batch 6: sealed bundle of 1 signed frame tx(s) posted (12857 B, members only) | `B8AF618149D1EF935DBE20D32BA30AF7450E02248BC3F11C1CE8F0D0FF4D709C` | testnet |
+| 2026-11-18 | cloister-dev-2 batch 6: sequencer service, 1 frame tx(s), 0 withdrawal(s), circuit v1 proof verified on chain; status finalized | `EC5CF11F22BE2B914160CA5E82E4AA944758402FEF8593435BB4A7091B717625` | testnet |
+| 2026-11-18 | cloister-dev-2 batch 7: sealed bundle of 1 signed frame tx(s) posted (15440 B, members only) | `2438DF5D8D4863D5302394DA2BCA81B676CEE4B664360811E8CB23AC39976244` | testnet |
+| 2026-11-18 | cloister-dev-2 batch 7: sequencer service, 1 frame tx(s), 0 withdrawal(s), circuit v1 proof verified on chain; status finalized | `816FB044BC916B602FFBF33E089977211788A9C3EA4AF128B947196A71F7ADD0` | testnet |
+| 2026-11-18 | cloister-dev-2 batch 8: sealed bundle of 2 signed frame tx(s) posted (20176 B, members only) | `F65CD42A4AE964FAC096EB26CA02B04F4E7A4AEB65C5A6EC8195E919A3CBD6B8` | testnet |
+| 2026-11-18 | cloister-dev-2 batch 8: sequencer service, 2 frame tx(s), 0 withdrawal(s), circuit v1 proof verified on chain; status finalized | `6E85898828E246ACB6F2377174538C6972ED8133B49A05F8A3A504452AF62197` | testnet |
+| 2026-11-18 | cloister-dev-2 batch 9: sealed bundle of 1 signed frame tx(s) posted (12857 B, members only) | `B89B6013BF47C15057050B4EDA8300566CD57F5E9E540527DD05D74B522874F8` | testnet |
+| 2026-11-18 | cloister-dev-2 batch 9: sequencer service, 1 frame tx(s), 0 withdrawal(s), circuit v1 proof verified on chain; status finalized | `6C89423A506CF4AC84F6AADE5E24E2B42660B3D0080DAB33FCA0BF1499FA973F` | testnet |
+| 2026-11-18 | Settlement receipt for cloister-dev-2 batch 5 verified against live chain state (ML-DSA-87 anchor, key read from chain): valid | receipts/cloister-dev-2-5.json | testnet |
+| 2026-11-18 | Settlement receipt for cloister-dev-2 batch 6 verified against live chain state (ML-DSA-87 anchor, key read from chain): valid | receipts/cloister-dev-2-6.json | testnet |
+| 2026-11-18 | Settlement receipt for cloister-dev-2 batch 7 verified against live chain state (ML-DSA-87 anchor, key read from chain): valid | receipts/cloister-dev-2-7.json | testnet |
+| 2026-11-18 | Settlement receipt for cloister-dev-2 batch 8 verified against live chain state (ML-DSA-87 anchor, key read from chain): valid | receipts/cloister-dev-2-8.json | testnet |
+| 2026-11-18 | Settlement receipt for cloister-dev-2 batch 9 verified against live chain state (ML-DSA-87 anchor, key read from chain): valid | receipts/cloister-dev-2-9.json | testnet |

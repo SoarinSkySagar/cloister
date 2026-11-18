@@ -223,8 +223,10 @@ export class Sequencer {
       // Record outcomes; learn keys of new accounts.
       picked.forEach(({ id, tx }, i) => {
         const account = assigned[i] ?? tx.sender;
-        const reg = actionsOf(tx).find((a) => a.kind === "register_key");
-        if (reg && result.txs[i]?.applied[actionsOf(tx).indexOf(reg)]) this.keystore.set(account, reg.publicKey);
+        const acts = actionsOf(tx);
+        const k = acts.findIndex((a) => a.kind === "register_key");
+        const reg = k >= 0 ? acts[k] : undefined;
+        if (reg?.kind === "register_key" && result.txs[i]?.applied[k]) this.keystore.set(account, reg.publicKey);
         this.statuses.set(id, { status: "included", batch: batchIndex, account, applied: result.txs[i]!.applied, skipped: result.txs[i]!.skipped, submitTx: res.transactionHash });
       });
       const done = new Set(picked.map((p) => p.id));

@@ -3,6 +3,7 @@
  *
  *   POST /tx      { tx: <hex FrameTx> }  -> { id } or 400 { error }
  *   GET  /tx/<id>                        -> the sequencer's status for the tx
+ *   POST /account  (signed query)        -> passed through to the sequencer, which checks the signature
  *   GET  /info                           -> rollup, fee floor, counters
  */
 import { createServer } from "node:http";
@@ -35,6 +36,13 @@ createServer(async (req, res) => {
       const { tx } = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
       try { return send(res, 200, await relayer.relay(tx, req.socket.remoteAddress ?? "anon")); }
       catch (e) { return send(res, 400, { error: (e as Error).message }); }
+    }
+    if (req.method === "POST" && url.pathname === "/account") {
+      // Signed account query: passed through untouched, the sequencer verifies the signature.
+      const chunks: Buffer[] = []; let n = 0;
+      for await (const c of req) { n += (c as Buffer).length; if (n > 16_000) return send(res, 413, { error: "body too large" }); chunks.push(c as Buffer); }
+      const r = await fetch(`${relayer.cfg.upstream}/account`, { method: "POST", headers: { "content-type": "application/json" }, body: Buffer.concat(chunks) });
+      return send(res, r.status, await r.json());
     }
     if (req.method === "GET" && url.pathname.startsWith("/tx/")) return send(res, 200, await relayer.status(url.pathname.slice(4)));
     if (req.method === "GET" && url.pathname === "/info") return send(res, 200, { rollup_id: rollupId, min_fee: relayer.cfg.minFee, stats: relayer.stats });

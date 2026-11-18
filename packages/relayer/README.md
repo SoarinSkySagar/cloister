@@ -9,6 +9,7 @@ pnpm relayer --id cloister-dev-2 [--port 8788] [--upstream http://127.0.0.1:8787
 | Endpoint | |
 |---|---|
 | `POST /tx {tx: hex}` | Validate and forward. Returns `{id}` or 400 with the reason |
+| `POST /account` | A signed account query, passed through to the sequencer (which checks the signature), so users need only the relayer's URL |
 | `GET /tx/<id>` | The sequencer's status for that tx |
 | `GET /info` | Fee floor and counters |
 
