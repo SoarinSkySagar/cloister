@@ -8,14 +8,16 @@
  *           [--fee <qor>] [--atomic] [--expiry <batches>] --out tx.hex
  *   sign    --as <name> --in tx.hex        fill this identity's slot (sender or sponsor)
  *   inspect --in tx.hex [--id <rollup>]    decode, check structure and signatures
- *   send    --in tx.hex --id <rollup> [--via operator] [--envelope out.bin]
+ *   status  --tx <id> --seq <url>          where a tx sent to the sequencer is (queued, included, rejected)
+ *   send    --in tx.hex --id <rollup> [--seq <url>] [--via operator] [--envelope out.bin]
+ *           with --seq (or CLOISTER_SEQUENCER_URL): hand the signed tx to the sequencer.
  *           seal to the rollup's members (ML-KEM-1024) and post. A dedicated rollup only accepts
  *           posts from its sequencer, so on cloister-dev-N pass --via operator (dev only) or
  *           --envelope to hand the sealed bytes to the relayer.
  *
  * QOR amounts are in QOR (decimals allowed), USD amounts in USD (6 decimals).
- * Account lookups read the operator's state view (circuits/setup/<rollup>/state.json, or --state)
- * until the sequencer serves member queries.
+ * Account lookups: with --seq, a signed query to the sequencer returns your own account only.
+ * Without it, the operator's local state view (circuits/setup/<rollup>/state.json, or --state).
  */
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -25,7 +27,7 @@ import {
   ASSET, CHAIN_ID, NEW_ACCOUNT, REPO_ROOT, actionsOf, allIdentities, buildFrameTx, fillEnvValues, findByCommit,
   formatQor, frameTxFromHex, frameTxToHex, identity, isValidUserName, loadEnv, payerOf, sighash, signFrameTx,
   signatureErrors, structuralErrors, testnetClient, txClientFor, userEnvName, encodeFrameTx,
-  type Action, type FrameTx, type RollupState,
+  signAccountQuery, type Action, type FrameTx, type Identity, type RollupState, type StateAccount,
 } from "@cloister/common";
 
 const [cmd, ...args] = process.argv.slice(2);
@@ -43,6 +45,29 @@ function units(s: string): bigint {
 }
 const fmtUsd = (u: bigint | number) => `${(Number(u) / 1e6).toLocaleString("en-US", { maximumFractionDigits: 6 })} USD`;
 
+const SEQ = flag("--seq") ?? env.CLOISTER_SEQUENCER_URL;
+
+async function seqCall(path: string, init?: { method?: string; body?: unknown }): Promise<any> {
+  if (!SEQ) throw new Error("no sequencer: pass --seq http://127.0.0.1:8787 or set CLOISTER_SEQUENCER_URL");
+  const r = await fetch(new URL(path, SEQ), {
+    method: init?.method ?? "GET", headers: { "content-type": "application/json" },
+    body: init?.body === undefined ? undefined : JSON.stringify(init.body),
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(`sequencer: ${j.error ?? r.status}`);
+  return j;
+}
+
+/** The caller's own account: from the sequencer (signed query) if configured, else the local state view. */
+async function myAccount(me: Identity, rollupId: string): Promise<{ account?: StateAccount; batches: number; source: string }> {
+  if (SEQ) {
+    const r = await seqCall("/account", { method: "POST", body: signAccountQuery(rollupId, me.publicKey, me.secretKey) });
+    return { account: r.account ?? undefined, batches: r.batches, source: "sequencer (signed query)" };
+  }
+  const st = loadState(rollupId);
+  return { account: findByCommit(st, me.pkCommit), batches: st.batches, source: "local state view" };
+}
+
 function loadState(rollupId: string): RollupState {
   const path = flag("--state") ?? join(REPO_ROOT, "circuits", "setup", rollupId, "state.json");
   if (!existsSync(path)) throw new Error(`no state view at ${path} (pass --state)`);
@@ -52,6 +77,7 @@ function loadState(rollupId: string): RollupState {
 /** Resolve "--to 2" or "--to watchtower" to an account index. */
 async function accountIndex(ref: string, state: RollupState): Promise<number> {
   if (/^\d+$/.test(ref)) return Number(ref);
+  if (SEQ) throw new Error(`with a sequencer, give account indexes (not "${ref}"): other accounts are private`);
   const id = await identity(rdk, ref, env);
   const acct = findByCommit(state, id.pkCommit);
   if (!acct) throw new Error(`${ref} has no account on this rollup yet`);
@@ -103,9 +129,8 @@ switch (cmd) {
     console.log(`  ML-DSA-87 pk_commit ${me.pkCommit}`);
     const id = flag("--id");
     if (id) {
-      const state = loadState(id);
-      const a = findByCommit(state, me.pkCommit);
-      console.log(a ? `  ${id} account #${a.index}: ${formatQor(BigInt(a.qor))}, ${fmtUsd(a.usd)}, nonce ${a.nonce}  (state after ${state.batches} batches)`
+      const { account: a, batches, source } = await myAccount(me, id);
+      console.log(a ? `  ${id} account #${a.index}: ${formatQor(BigInt(a.qor))}, ${fmtUsd(a.usd)}, nonce ${a.nonce}  (after ${batches} batches; ${source})`
         : `  no account on ${id} yet (build with --register --sponsor <idx> to onboard)`);
     }
     break;
@@ -113,8 +138,8 @@ switch (cmd) {
   case "build": {
     const me = await identity(rdk, need("--as"), env);
     const rollupId = need("--id");
-    const state = loadState(rollupId);
-    const mine = findByCommit(state, me.pkCommit);
+    const state: RollupState = SEQ ? { batches: 0, root: "", accounts: [] } : loadState(rollupId);
+    const mine = (await myAccount(me, rollupId)).account;
     const register = has("--register");
     if (!mine && !register) throw new Error(`${me.name} has no account on ${rollupId}: add --register (and --sponsor)`);
     if (mine && register) throw new Error(`${me.name} already has account #${mine.index}`);
@@ -134,7 +159,7 @@ switch (cmd) {
     const tx = buildFrameTx({
       chainId: CHAIN_ID, rollupId,
       sender: mine ? mine.index : NEW_ACCOUNT,
-      nonce: BigInt(mine?.nonce ?? 0),
+      nonce: BigInt(flag("--nonce") ?? mine?.nonce ?? 0),
       expiryBatch: BigInt((latest ? latest.batchIndex + 1 : 0) + Number(flag("--expiry") ?? 50)),
       feeAsset: ASSET.QOR, maxFee: units(flag("--fee") ?? "0"),
       payer: sponsor ? await accountIndex(sponsor, state) : undefined,
@@ -157,7 +182,7 @@ switch (cmd) {
       if (reg && Buffer.from(reg.publicKey).equals(Buffer.from(me.publicKey))) slot = NEW_ACCOUNT;
     }
     if (slot === undefined) {
-      const acct = findByCommit(loadState(tx.rollupId), me.pkCommit);
+      const acct = (await myAccount(me, tx.rollupId)).account;
       if (acct && tx.sigs.some((s) => s.signer === acct.index)) slot = acct.index;
     }
     if (slot === undefined) throw new Error(`${me.name} is neither the sender nor the sponsor of this tx`);
@@ -179,6 +204,11 @@ switch (cmd) {
   case "send": {
     const rollupId = need("--id");
     const tx = readTx(need("--in"));
+    if (SEQ && !flag("--envelope") && !flag("--via")) {
+      const r = await seqCall("/tx", { method: "POST", body: { tx: frameTxToHex(tx) } });
+      console.log(`accepted by the sequencer: id ${r.id}\n  track it: pnpm --silent wallet status --seq ${SEQ} --tx ${r.id}`);
+      break;
+    }
     const errs = [...structuralErrors(tx, { chainId: CHAIN_ID, rollupId }), ...signatureErrors(tx, await keyOfFor(rollupId))];
     if (errs.length) throw new Error(`refusing to send: ${errs.join("; ")}`);
     const rollup = await rdk.rest.getRollup(rollupId);
@@ -203,6 +233,11 @@ switch (cmd) {
     if (res.code !== 0) throw new Error(`post failed: ${res.rawLog}`);
     const inbox = await rdk.rest.getInbox(rollupId);
     console.log(`posted by ${poster}: ${res.transactionHash} (inbox seq ${inbox.headSequence})`);
+    break;
+  }
+  case "status": {
+    const r = await seqCall(`/tx/${need("--tx")}`);
+    console.log(JSON.stringify(r, null, 2));
     break;
   }
   default:

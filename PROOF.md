@@ -31,3 +31,10 @@ Every transaction that proves a feature works goes here, newest last.
 | 2026-11-18 | cloister-dev-2 batch 2 (frame txs): **circuit v1** Groth16 proof verified on chain (Poseidon2 account tree, 2 frame txs, 1 withdrawal(s) with the SHAKE-256 root computed in-circuit); status finalized | `DB88318D506743C07F5CCC81900E47BCA61334945AA7F53752B6CC38F9EE325D` | testnet |
 | 2026-11-18 | cloister-dev-2 batch 2: withdrawal #0 of 1 QOR paid on L1 from a leaf proven inside circuit v1 | `809371B5EA98D935C3E75A67022824E65CD39434DDDCE612F127C44B7B7657CC` | testnet |
 | 2026-11-18 | Settlement receipt for cloister-dev-2 batch 2 verified against live chain state (ML-DSA-87 anchor, key read from chain): valid | receipts/cloister-dev-2-2.json | testnet |
+| 2026-11-18 | cloister-dev-2 batch 3: sealed bundle of 1 signed frame tx(s) posted (8271 B, members only) | `CC050EAC798E047EE1B77E9DD5455969F1D61A67C43DB44F6CFFF74CF711EDE6` | testnet |
+| 2026-11-18 | cloister-dev-2 batch 3: sequencer service, 1 frame tx(s), 1 withdrawal(s), circuit v1 proof verified on chain; status finalized | `5E75EBCBCE906D2E4C795726398D3691AB0A3F1C0B260B539E266A037EF1C203` | testnet |
+| 2026-11-18 | cloister-dev-2 batch 3: withdrawal #0 of 0.5 QOR to qor1plfn9jpxnavtxsrwe0sg6cls5z9amy8p3tg9nu paid on L1 | `C7D83AF32A9991D746CF058A6E8E88582311993125D447D352AD44CBEF1CFA83` | testnet |
+| 2026-11-18 | cloister-dev-2 batch 4: sealed bundle of 1 signed frame tx(s) posted (8210 B, members only) | `6D2E3260BEB4D35811D8015141D01CE85FC83EC4A7FA25B4A5CC4C7F55F99282` | testnet |
+| 2026-11-18 | cloister-dev-2 batch 4: sequencer service, 1 frame tx(s), 0 withdrawal(s), circuit v1 proof verified on chain; status finalized | `70414F431AE2398DEC968712787FBBFBC6EC4715A6D3C7ADCA6AFB1B0577DA82` | testnet |
+| 2026-11-18 | Settlement receipt for cloister-dev-2 batch 3 verified against live chain state (ML-DSA-87 anchor, key read from chain): valid | receipts/cloister-dev-2-3.json | testnet |
+| 2026-11-18 | Settlement receipt for cloister-dev-2 batch 4 verified against live chain state (ML-DSA-87 anchor, key read from chain): valid | receipts/cloister-dev-2-4.json | testnet |

@@ -132,3 +132,14 @@ test("bundle round trip", async () => {
   assert.equal(nextFreeIndex([0, 1, 2]), 3);
   assert.equal(nextFreeIndex([]), 0);
 });
+
+test("account queries: only a fresh signature by the key itself passes", async () => {
+  const { signAccountQuery, verifyAccountQuery } = await import("../src/index.ts");
+  const q = signAccountQuery("cloister", alice.publicKey, alice.secretKey, 1_000_000);
+  assert.deepEqual(verifyAccountQuery(q, "cloister", 1_000_000), { pkCommit: pkCommit(alice.publicKey) });
+  assert.ok("error" in verifyAccountQuery(q, "cloister-dev-2", 1_000_000));
+  assert.ok("error" in verifyAccountQuery(q, "cloister", 1_000_000 + 10 * 60_000));
+  const forged = { ...signAccountQuery("cloister", alice.publicKey, mallory.secretKey, 1_000_000) };
+  assert.ok("error" in verifyAccountQuery(forged, "cloister", 1_000_000));
+  assert.ok("error" in verifyAccountQuery({ ...q, ts: q.ts + 1 }, "cloister", 1_000_000));
+});
