@@ -77,6 +77,15 @@ type Options struct {
 	// build an otherwise consistent witness that only the circuit's
 	// "log update is at LOG_INDEX" rule rejects.
 	LogAt *uint32
+	// OverwriteKeys (with Unchecked) builds a register_key onto an account that
+	// already has a key as a *consistent* witness: the move carries new-old, so the
+	// circuit's "old + new" arithmetic lands on the replaced key. Only the
+	// "never overwrite a key" rule can reject it.
+	OverwriteKeys bool
+	// FreeActions (with Unchecked) marks tx slots that are inactive (no nonce
+	// bump, record 0) yet still apply their moves: a free, replayable action.
+	// Only the "inactive tx has only no-ops" rule can reject it.
+	FreeActions map[int]bool
 }
 
 func GenesisTree(cfg Config) (*Tree, error) {
@@ -262,6 +271,11 @@ func (b *builder) apply(mv move) Move {
 		out.IsRegister = 1
 		out.PkCommit = bi(mv.pk)
 		out.Amount = 0
+		if old := b.t.Get(mv.from); b.opts.OverwriteKeys && !old.Pk.IsZero() {
+			var delta fr.Element
+			delta.Sub(&mv.pk, &old.Pk)
+			out.PkCommit = bi(delta)
+		}
 	}
 	out.From = b.update(mv.from, func(a Account) Account {
 		switch mv.kind {
@@ -382,9 +396,15 @@ func Build(cfg Config, t *Tree, prevIsGenesis bool, batch Batch, opts Options) (
 				return nil, nil, fmt.Errorf("tx %d: fee: %s", i, why)
 			}
 		}
+		free := opts.Unchecked && opts.FreeActions[i]
 		w.Txs[i].Active = 1
 		rec.NonceBefore = b.t.Get(tx.Sender).Nonce
-		w.Txs[i].Sender = b.update(tx.Sender, func(a Account) Account { a.Nonce++; return a })
+		if free {
+			w.Txs[i].Active = 0
+			w.Txs[i].Sender = b.update(tx.Sender, func(a Account) Account { return a })
+		} else {
+			w.Txs[i].Sender = b.update(tx.Sender, func(a Account) Account { a.Nonce++; return a })
+		}
 		w.Txs[i].Moves[0] = b.apply(fee)
 		rec.Moves = make([]MoveRecord, cfg.Moves)
 		rec.Moves[0] = fee.record(true)
@@ -446,9 +466,13 @@ func Build(cfg Config, t *Tree, prevIsGenesis bool, batch Batch, opts Options) (
 			}
 			for k := j; k < end; k++ {
 				if ok {
+					oldPk := b.t.Get(moves[k].from).Pk
 					w.Txs[i].Moves[1+k] = b.apply(moves[k])
 					tr.Applied[k] = true
 					rec.Moves[1+k] = moves[k].record(true)
+					if opts.Unchecked && opts.OverwriteKeys && moves[k].kind == 3 && !oldPk.IsZero() {
+						rec.Moves[1+k].Aux.Sub(&moves[k].pk, &oldPk) // the record carries what the circuit saw: new - old
+					}
 				} else {
 					w.Txs[i].Moves[1+k] = b.noop(tx.Sender)
 				}
@@ -460,7 +484,9 @@ func Build(cfg Config, t *Tree, prevIsGenesis bool, batch Batch, opts Options) (
 		}
 		tr.Included = true
 		res.Txs = append(res.Txs, tr)
-		res.Records[i] = rec
+		if !free {
+			res.Records[i] = rec
+		}
 	}
 
 	// Inclusion: commit the tx records and the batch counter in the log leaf (spec/inclusion.md).

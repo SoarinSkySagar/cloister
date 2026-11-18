@@ -365,3 +365,36 @@ func firstLine(s string) string {
 	}
 	return s
 }
+
+// The next two tests exist because mutation checking showed the older tests rejected their witnesses for another
+// reason (a root that no longer matched), not by the rule they were named after. These witnesses are consistent in
+// every other respect, so only the rule under test can reject them.
+
+func TestRejectKeyOverwriteWithAConsistentWitness(t *testing.T) {
+	cfg := testConfig()
+	// alice already has a key after batch1; replacing it must be impossible, even with a witness that sums to the new key
+	b := Batch{Txs: []TxIn{{Sender: alice, Payer: alice, Relayer: relay, Fee: 1, Actions: []ActionIn{
+		{Kind: "register_key", PkCommit: "77"}}}}}
+	w, _, tree := build(t, cfg, b, Options{Unchecked: true, OverwriteKeys: true})
+	if got := tree.Get(alice).Pk; got.IsZero() {
+		t.Fatal("test setup: alice should end up with a key")
+	}
+	mustFail(t, cfg, w, "replacing an existing key with a witness that sums to the new key")
+}
+
+func TestRejectActionsInAnInactiveTxWithAConsistentWitness(t *testing.T) {
+	cfg := testConfig()
+	b := Batch{Txs: []TxIn{{Sender: alice, Payer: alice, Relayer: relay, Fee: 1, Actions: []ActionIn{
+		{Kind: "transfer", To: bob, Amount: 5}}}}}
+	// control: the same tx, active, is valid
+	w, _, _ := build(t, cfg, b, Options{Unchecked: true})
+	if err := solves(t, cfg, w); err != nil {
+		t.Fatalf("control witness must be valid: %v", err)
+	}
+	// free action: inactive (no nonce bump) but the transfer still applies
+	w, _, tree := build(t, cfg, b, Options{Unchecked: true, FreeActions: map[int]bool{0: true}})
+	if tree.Get(bob).Qor != 5+1 && tree.Get(bob).Qor != 5 {
+		t.Fatalf("test setup: the transfer should have applied, bob has %d", tree.Get(bob).Qor)
+	}
+	mustFail(t, cfg, w, "an inactive tx that still applies actions (a replayable free action)")
+}

@@ -36,7 +36,7 @@ if (!isValidRollupId(rollupId) || !rollupId.startsWith("cloister-dev-")) {
 
 const vkDirArg = flag("--vk-dir");
 const buildDir = join(REPO_ROOT, "circuits", vkDirArg ?? "build");
-const circuitLabel = vkDirArg ? `circuit v1 VK (${vkDirArg})` : "spike gnark VK";
+const circuitLabel = vkDirArg ? `ledger circuit VK (${vkDirArg})` : "spike gnark VK";
 const vkFiles = { raw: join(buildDir, "vk.raw.bin"), compressed: join(buildDir, "vk.compressed.bin") } as const;
 for (const path of Object.values(vkFiles)) {
   if (!existsSync(path)) throw new Error(`missing ${path}: run \`cd circuits && go run ./cmd/export -out build\` first`);

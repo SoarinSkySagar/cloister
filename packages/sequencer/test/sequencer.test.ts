@@ -129,17 +129,18 @@ test("a time-locked tx waits in the queue and does not trigger a batch before it
   assert.equal(seq.queueLength(), 1, "the tx stays queued");
 });
 
-const proofOf = (sender: number, parties: number[]): InclusionProofJSON => ({
-  version: 1, chainId: "qorechain-diana", rollupId: ID, batchIndex: 3, record: { sender, parties }, txIndex: 0, txPath: [], logPath: [],
+const proofOf = (sender: number, parties: number[], payer = sender): InclusionProofJSON => ({
+  version: 1, chainId: "qorechain-diana", rollupId: ID, batchIndex: 3, record: { sender, parties, moves: [{ from: payer }] }, txIndex: 0, txPath: [], logPath: [],
 });
 
 test("an inclusion proof is shown only to the accounts its record names", () => {
   const { seq } = sandbox({ batches: 4, root: ROOT, accounts: [acct(0, op.publicKey), acct(5, alice.publicKey), acct(6, bob.publicKey), acct(7, carol.publicKey)] });
   const id = "ab".repeat(32);
-  seq.saveProofs(3, [id], [proofOf(5, [6])]);
+  seq.saveProofs(3, [id], [proofOf(5, [6], 0)]); // sponsored by account 0
   const who = (k: typeof alice) => seq.proofFor(id, pkCommit(k.publicKey));
   assert.equal((who(alice) as InclusionProofJSON).batchIndex, 3, "the sender");
   assert.equal((who(bob) as InclusionProofJSON).batchIndex, 3, "a listed party");
+  assert.equal((who(op) as InclusionProofJSON).batchIndex, 3, "the sponsor who paid the fee");
   assert.deepEqual(who(carol), { error: "this tx does not name your account" });
   assert.deepEqual(who(key(9)), { error: "no account for this key" });
   assert.deepEqual(seq.proofFor("00".repeat(32), pkCommit(alice.publicKey)), { error: "no proof for that tx" });

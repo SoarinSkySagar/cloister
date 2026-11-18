@@ -45,7 +45,7 @@ export const feeFailure = txFailure;
 export interface SavedProof { tx_id: string; proof: InclusionProofJSON }
 export interface InclusionProofJSON {
   version: number; chainId: string; rollupId: string; batchIndex: number;
-  record: { sender: number; parties: number[] } & Record<string, unknown>;
+  record: { sender: number; parties: number[]; moves?: { from: number }[] } & Record<string, unknown>;
   txIndex: number; txPath: string[]; logPath: string[];
 }
 
@@ -246,7 +246,7 @@ export class Sequencer {
       if (res.code !== 0) throw new Error(`submitBatch failed (code ${res.code}): ${res.rawLog}`);
       const settled = await this.rdk.rest.getBatch(rollupId, batchIndex);
       copyFileSync(join(out, "next-state.json"), join(this.setupDir, "state.json"));
-      this.log(`${rollupId} batch ${batchIndex}: sequencer service, ${picked.length} frame tx(s), ${withdrawals.length} withdrawal(s), circuit v1 proof verified on chain; status ${settled.status}`, `\`${res.transactionHash}\``);
+      this.log(`${rollupId} batch ${batchIndex}: sequencer service, ${picked.length} frame tx(s), ${withdrawals.length} withdrawal(s), circuit v2 proof verified on chain; status ${settled.status}`, `\`${res.transactionHash}\``);
 
       this.record(picked, assigned, result.txs, batchIndex, res.transactionHash);
       this.saveProofs(batchIndex, picked.map((p) => p.id), result.inclusion ?? []);
@@ -295,7 +295,7 @@ export class Sequencer {
   }
 
   /**
-   * The inclusion proof of a tx, only for its sender or one of its listed parties. `callerCommit` is the pk_commit of
+   * The inclusion proof of a tx, only for the accounts its record names as sender, co-signer or fee payer. `callerCommit` is the pk_commit of
    * the verified caller (a signed query); a private rollup shows a record only to the accounts it names.
    */
   proofFor(txId: string, callerCommit: string): InclusionProofJSON | { error: string } {
@@ -307,7 +307,9 @@ export class Sequencer {
     for (const f of readdirSync(dir)) {
       const hit = (JSON.parse(readFileSync(join(dir, f), "utf8")) as SavedProof[]).find((p) => p.tx_id === txId);
       if (!hit) continue;
-      const named = hit.proof.record.sender === me.index || hit.proof.record.parties.includes(me.index);
+      const r = hit.proof.record;
+      const payer = r.moves?.[0]?.from; // the fee move debits the payer (a sponsor is named too)
+      const named = r.sender === me.index || r.parties.includes(me.index) || payer === me.index;
       return named ? hit.proof : { error: "this tx does not name your account" };
     }
     return { error: "no proof for that tx" };
