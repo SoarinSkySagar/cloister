@@ -34,6 +34,7 @@ Built with these open source libraries and kits:
 | [@qorechain/qoreseal](https://github.com/qorechain/qoreseal) | Apache-2.0 | ML-KEM-1024 sealing helpers |
 | [gnark](https://github.com/Consensys/gnark) | Apache-2.0 | Groth16 circuit and prover |
 | [esbuild](https://github.com/evanw/esbuild) | MIT | Bundles the receipt verifier page for the browser |
+| [@noble/hashes](https://github.com/paulmillr/noble-hashes) | MIT | SHAKE-256 for watchtower verdicts, in the browser and Node |
 
 ## License
 

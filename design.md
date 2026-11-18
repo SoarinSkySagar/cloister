@@ -184,6 +184,13 @@ pk_commit = SHAKE-256(ML-DSA-87 pubkey) reduced mod r              // computed o
 
 **Alerts:** console, a webhook (Discord/Telegram), and dashboard badges.
 
+### A6b. Co-signed receipts (added 18 Nov: the "public assurance over private data" feature)
+
+A settlement receipt proves a batch was settled and anchored. It does not say that anyone looked at the data, which on a private rollup only members can. So each member watchtower signs a **verdict** per batch with its ML-DSA-87 key: what it decrypted and checked (hash link, batch index, tx count, structure, every ML-DSA signature), and whether all of it passed. The verifier accepts a verdict only if the signer is a current member of the rollup, its key is read from the chain's PQC registry (never from the verdict), and the verdict names the same state root and data hash the chain holds. The receipts page then shows "settled" and, separately, "checked by N member watchtower(s)".
+
+- Format and signing domain: [spec/verdict.md](spec/verdict.md), golden vector in `spec/vectors/verdict.json`.
+- Honest limits: a verdict is an off-chain signature (published in `receipts/`), not an on-chain attestation, and a single colluding member set can sign a false "pass". It adds accountability and a public, checkable record; it does not remove the need to trust that at least one watchtower is honest. Optional later: stake and slashing.
+
 ## A7. Days 1–2 spike: go or no-go (17–18 Nov)
 
 Record every transaction hash in PROOF.md.
@@ -232,6 +239,7 @@ Record every transaction hash in PROOF.md.
 | 17–18 Nov | Spike (A7) and go/no-go |
 | 19–23 Nov | Circuit v1: 2-asset ledger, transfer, fees. Sequencer/prover loop. Wallet CLI |
 | 23–25 Nov | Frame transactions end to end: sponsor frame, relayer, reimbursement |
+| 18–20 Nov | **Co-signed receipts** (§A6b): watchtower verdicts, verifier shows both |
 | 24–26 Nov | Withdrawals (in the circuit or fallback), receipts, verifier page |
 | **26 Nov** | **Part B go/no-go** (§B6) |
 | 27 Nov | Workshop 4, protocol clinic (16:30 UTC). Ask the open questions |

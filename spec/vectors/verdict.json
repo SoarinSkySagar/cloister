@@ -1,0 +1,118 @@
+[
+  {
+    "name": "all checks pass, bundle",
+    "input": {
+      "version": 1,
+      "chainId": "qorechain-diana",
+      "rollupId": "cloister-dev-2",
+      "batchIndex": 3,
+      "stateRoot": "0cd96a4ecbbedde114e42533ffa2f1d394da5685e5a5f5bc38ce2d20091d4919",
+      "dataHash": "42a7495eddf6a383154037c50d0429962e2ea56625e43bb851e69328a16c1255",
+      "watchtower": "qor1lyu0fnsxvxvwmhwnmuvrln9st4z70dap5mzkad",
+      "result": "pass",
+      "scope": "bundle",
+      "signedAt": 1795000000,
+      "checks": [
+        {
+          "name": "count",
+          "ok": true
+        },
+        {
+          "name": "decrypt",
+          "ok": true
+        },
+        {
+          "name": "index",
+          "ok": true
+        },
+        {
+          "name": "link",
+          "ok": true
+        },
+        {
+          "name": "signature",
+          "ok": true
+        },
+        {
+          "name": "structure",
+          "ok": true
+        }
+      ]
+    },
+    "expected": {
+      "message": "62d24cef5feb969ecec95805819cda285d2886001c6ec65e2f21fe6ec9c6eca0"
+    }
+  },
+  {
+    "name": "failed signature check",
+    "input": {
+      "version": 1,
+      "chainId": "qorechain-diana",
+      "rollupId": "cloister-dev-2",
+      "batchIndex": 3,
+      "stateRoot": "0cd96a4ecbbedde114e42533ffa2f1d394da5685e5a5f5bc38ce2d20091d4919",
+      "dataHash": "42a7495eddf6a383154037c50d0429962e2ea56625e43bb851e69328a16c1255",
+      "watchtower": "qor1lyu0fnsxvxvwmhwnmuvrln9st4z70dap5mzkad",
+      "result": "fail",
+      "scope": "bundle",
+      "signedAt": 1795000000,
+      "checks": [
+        {
+          "name": "count",
+          "ok": true
+        },
+        {
+          "name": "decrypt",
+          "ok": true
+        },
+        {
+          "name": "index",
+          "ok": true
+        },
+        {
+          "name": "link",
+          "ok": true
+        },
+        {
+          "name": "signature",
+          "ok": false
+        },
+        {
+          "name": "structure",
+          "ok": true
+        }
+      ]
+    },
+    "expected": {
+      "message": "27d0d887dc0b74635b1a8b5b5310359a028c468204d88ef28b891cf956fbe168"
+    }
+  },
+  {
+    "name": "link-only legacy batch",
+    "input": {
+      "version": 1,
+      "chainId": "qorechain-diana",
+      "rollupId": "cloister-dev-2",
+      "batchIndex": 0,
+      "stateRoot": "0cd96a4ecbbedde114e42533ffa2f1d394da5685e5a5f5bc38ce2d20091d4919",
+      "dataHash": "42a7495eddf6a383154037c50d0429962e2ea56625e43bb851e69328a16c1255",
+      "watchtower": "qor1lyu0fnsxvxvwmhwnmuvrln9st4z70dap5mzkad",
+      "result": "pass",
+      "scope": "link-only",
+      "signedAt": 1795000000,
+      "checks": [
+        {
+          "name": "legacy",
+          "ok": true
+        },
+        {
+          "name": "link",
+          "ok": true
+        }
+      ]
+    },
+    "expected": {
+      "message": "5572dff851aa5a80b4247d0d67abc05041de321fad3d852c81261c7489420738"
+    }
+  }
+]
