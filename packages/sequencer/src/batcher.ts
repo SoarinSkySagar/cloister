@@ -275,3 +275,111 @@ export class Sequencer {
     }
   }
 
+
+  /** After a batch is accepted: remember outcomes and the keys of newly registered accounts. */
+  record(picked: { id: string; tx: FrameTx }[], assigned: (number | undefined)[], results: { applied: boolean[]; skipped?: string[] }[], batchIndex: number, submitTx: string) {
+    picked.forEach(({ id, tx }, i) => {
+      const account = assigned[i] ?? tx.sender;
+      // actionsOf builds new objects on every call, so locate the action by index, never by identity.
+      const acts = actionsOf(tx);
+      const k = acts.findIndex((a) => a.kind === "register_key");
+      const reg = k >= 0 ? acts[k] : undefined;
+      if (reg?.kind === "register_key" && results[i]?.applied[k]) this.keystore.set(account, reg.publicKey);
+      this.statuses.set(id, { status: "included", batch: batchIndex, account, applied: results[i]!.applied, skipped: results[i]!.skipped, submitTx });
+    });
+    const done = new Set(picked.map((p) => p.id));
+    this.mempool = this.mempool.filter((m) => !done.has(m.id));
+    this.persist();
+  }
+
+
+  private proofsDir() { return join(this.setupDir, "proofs"); }
+
+  /** Keep each included tx's inclusion proof (members-only data, like the state). Proofs are in tx slot order. */
+  saveProofs(batchIndex: number, ids: string[], proofs: InclusionProofJSON[]) {
+    if (proofs.length !== ids.length) throw new Error(`prover returned ${proofs.length} inclusion proofs for ${ids.length} txs`);
+    mkdirSync(this.proofsDir(), { recursive: true });
+    const saved: SavedProof[] = ids.map((tx_id, i) => ({ tx_id, proof: proofs[i]! }));
+    atomicWrite(join(this.proofsDir(), `${batchIndex}.json`), JSON.stringify(saved, null, 1));
+  }
+
+  /**
+   * The inclusion proof of a tx, only for the accounts its record names as sender, co-signer or fee payer. `callerCommit` is the pk_commit of
+   * the verified caller (a signed query); a private rollup shows a record only to the accounts it names.
+   */
+  proofFor(txId: string, callerCommit: string): InclusionProofJSON | { error: string } {
+    if (!/^[0-9a-f]{64}$/.test(txId)) return { error: "bad tx id" };
+    const me = this.state().accounts.find((a) => a.pk_commit === callerCommit);
+    if (!me) return { error: "no account for this key" };
+    const dir = this.proofsDir();
+    if (!existsSync(dir)) return { error: "no proof for that tx" };
+    for (const f of readdirSync(dir)) {
+      const hit = (JSON.parse(readFileSync(join(dir, f), "utf8")) as SavedProof[]).find((p) => p.tx_id === txId);
+      if (!hit) continue;
+      const r = hit.proof.record;
+      const payer = r.moves?.[0]?.from; // the fee move debits the payer (a sponsor is named too)
+      const named = r.sender === me.index || r.parties.includes(me.index) || payer === me.index;
+      return named ? hit.proof : { error: "this tx does not name your account" };
+    }
+    return { error: "no proof for that tx" };
+  }
+
+  private mempoolFile() { return join(this.setupDir, "mempool.json"); }
+  private persist() {
+    atomicWrite(this.mempoolFile(), JSON.stringify(this.mempool.map((m) => frameTxToHex(m.tx))));
+  }
+
+  /** Re-queue txs that were accepted before a restart (each is re-validated against the current state). */
+  restore(): { requeued: number; dropped: string[] } {
+    const dropped: string[] = [];
+    let requeued = 0;
+    if (!existsSync(this.mempoolFile())) return { requeued, dropped };
+    for (const h of JSON.parse(readFileSync(this.mempoolFile(), "utf8")) as string[]) {
+      try { this.submit(frameTxFromHex(h)); requeued++; } catch (e) { dropped.push((e as Error).message); }
+    }
+    this.persist();
+    return { requeued, dropped };
+  }
+
+  /**
+   * A crash between submitBatch and the local state update leaves the chain one batch ahead.
+   * If the prover's next-state for that batch matches the chain's root, adopt it and relearn the
+   * keys the batch registered. Anything else is refused: never guess at state.
+   */
+  async recover(): Promise<string | undefined> {
+    const { rollupId } = this.cfg;
+    const state = this.state();
+    const latest = await this.rdk.rest.getLatestBatch(rollupId).catch(() => undefined);
+    const chainNext = latest ? latest.batchIndex + 1 : 0;
+    if (chainNext === state.batches) return undefined;
+    if (latest && chainNext === state.batches + 1) {
+      const dir = join(this.setupDir, "..", "..", "build", `${rollupId}-b${state.batches}`);
+      const next = join(dir, "next-state.json");
+      if (existsSync(next)) {
+        const adopted = JSON.parse(readFileSync(next, "utf8")) as RollupState;
+        if (adopted.batches === chainNext && adopted.root === latest.stateRoot.toLowerCase().padStart(64, "0")) {
+          atomicCopy(next, join(this.setupDir, "state.json"));
+          const bundle = join(dir, "bundle.bin");
+          if (existsSync(bundle)) {
+            for (const tx of decodeBundle(new Uint8Array(readFileSync(bundle))).txs) {
+              for (const a of actionsOf(tx)) {
+                if (a.kind !== "register_key") continue;
+                const acct = adopted.accounts.find((x) => x.pk_commit === pkCommit(a.publicKey));
+                if (acct) this.keystore.set(acct.index, a.publicKey);
+              }
+            }
+          }
+          return `adopted batch ${state.batches} (chain was one ahead of local state)`;
+        }
+      }
+    }
+    throw new Error(`cannot recover: chain expects batch ${chainNext}, local state is at ${state.batches}`);
+  }
+
+  private reject(id: string, reason: string) {
+    this.statuses.set(id, { status: "rejected", reason });
+    this.mempool = this.mempool.filter((m) => m.id !== id);
+    this.persist();
+    console.log(`[seq] rejected ${id.slice(0, 12)}…: ${reason}`);
+  }
+}
