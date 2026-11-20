@@ -1,0 +1,73 @@
+{
+  "version": 2,
+  "chainId": "qorechain-diana",
+  "rollupId": "cloister-dev-5",
+  "batchIndex": 3,
+  "record": {
+    "digest": "64a1612f595928b76d977d6663c89e20ed3bcd1fdd796978fb35812bbf41a470",
+    "sender": 2,
+    "nonceBefore": "1",
+    "expiryBatch": "53",
+    "notBeforeBatch": "0",
+    "parties": [
+      3
+    ],
+    "moves": [
+      {
+        "code": 1,
+        "asset": 0,
+        "amount": "10000",
+        "from": 0,
+        "to": 1,
+        "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      {
+        "code": 1,
+        "asset": 1,
+        "amount": "5000000",
+        "from": 2,
+        "to": 3,
+        "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      {
+        "code": 1,
+        "asset": 0,
+        "amount": "400000",
+        "from": 3,
+        "to": 2,
+        "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      {
+        "code": 0,
+        "asset": 0,
+        "amount": "0",
+        "from": 0,
+        "to": 0,
+        "aux": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    ]
+  },
+  "txIndex": 0,
+  "txPath": [
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "0440d4ee8370b0cd0098bbc48e4b57cce27b1dbdc977f6c1b45c00064e29e374"
+  ],
+  "logPath": [
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "0440d4ee8370b0cd0098bbc48e4b57cce27b1dbdc977f6c1b45c00064e29e374",
+    "481aa1a9f2cfe032b46ab67c606fefe32b7a2ecf06559478da75d580c3d2fdcc",
+    "5da948b9672716eebbbd4a35e92ddf4dbd4e38a41c6dd63aae3df72322768404",
+    "02d715e5565d5285ea671140f531e4309c5854479d150624bd140ab602e359e2",
+    "4bb18aa8dd8aedb73b6f9720fa3ea6253a060d3adb957d82d3dff7736b0840b6",
+    "25cbb585d9ebadbec95adff2ced60f12c2cdea94b5dc5535186c3604b1d9e31b",
+    "59137ba0bb6e434cf7a096844813584f216bca3397661bbfbcebac2c9ff319f2",
+    "0a3b2319fdd4b68a011cbd6c6b0405101bdc982f306d6719f3cd39f1bef5035a",
+    "19989c4a5abf3fdd9a9c232b229a304036f324e3eecf969a3d177f6857488028",
+    "167bbfd5af0f7f7d75d5cb0fc33db4a6d9e6da5bb1f91fbc5644dbc7a1144682",
+    "62d2d3172c22f4184d485ddb199bc70e4a3b156eebb5e9eda894adb568c69756",
+    "3fe4b09e6a0ca872058de24ea5718ee7b243f103fead5a506579931a236a27b4",
+    "0d5214eb294977b3b5a6afa682d6c2eb125cf038d30834fcbbbd5e77876e5c89",
+    "2b4f4833bb70ff77462b86ee03f9dee239641a422823db6861350f8aa64a3a39",
+    "4473e3c6ae1808c61749520d046666645a0462a043fd890509680321dc9225f7"
+  ]
+}
