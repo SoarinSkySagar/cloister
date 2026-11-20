@@ -3,12 +3,14 @@
 Mutation check for circuits/ledger: remove one constraint at a time and confirm that a test fails.
 A negative test that still passes without its constraint is rejecting for the wrong reason.
 
-    cd circuits && python3 mutation_check.py          # all mutations, about 15 s each
-    cd circuits && python3 mutation_check.py window   # only mutations whose name contains "window"
+    python3 circuits/mutation_check.py          # all mutations, about 15 s each
+    python3 circuits/mutation_check.py window   # only mutations whose name contains "window"
 
 circuit.go is restored afterwards (and on Ctrl-C). Exit code 1 if any mutation is NOT caught.
 """
-import subprocess, sys, shutil
+import os, subprocess, sys, shutil
+
+os.chdir(os.path.dirname(os.path.abspath(__file__)))   # runs from anywhere
 
 SRC = "ledger/circuit.go"
 MUTATIONS = {

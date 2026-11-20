@@ -6,7 +6,7 @@
  * Exit code 1 if any receipt is invalid.
  */
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { createRdkClient, buildSettlementReceipt } from "@qorechain/rdk";
 import { parseReceipt, verifyReceipt, checkVerdicts, summarize } from "./verify.ts";
 import { parseVerdicts } from "./verdict.ts";
@@ -17,9 +17,11 @@ const [cmd, ...args] = process.argv.slice(2);
 const flag = (n: string) => { const i = args.indexOf(n); return i === -1 ? undefined : args[i + 1]; };
 const client = createRdkClient({ network: "testnet" });
 const REC = join(import.meta.dirname, "..", "..", "..", "receipts");
+/** `pnpm --filter` runs here, not where you typed the command: resolve file arguments against the latter. */
+const here = (f: string) => (isAbsolute(f) ? f : join(process.env.INIT_CWD ?? process.cwd(), f));
 
 if (cmd === "verify") {
-  const files = args.includes("--all") ? readdirSync(REC).filter((f) => f.endsWith(".json") && !f.endsWith(".verdicts.json")).sort().map((f) => join(REC, f)) : args.filter((a) => !a.startsWith("--"));
+  const files = args.includes("--all") ? readdirSync(REC).filter((f) => f.endsWith(".json") && !f.endsWith(".verdicts.json")).sort().map((f) => join(REC, f)) : args.filter((a) => !a.startsWith("--")).map(here);
   if (!files.length) throw new Error("usage: verify <receipt.json ...> | --all");
   let bad = 0;
   for (const f of files) {
@@ -44,7 +46,7 @@ if (cmd === "verify") {
   console.log(bad ? `${bad} invalid` : `all ${files.length} receipt(s) valid`);
   process.exit(bad ? 1 : 0);
 } else if (cmd === "verify-proof") {
-  const files = args.filter((a) => !a.startsWith("--"));
+  const files = args.filter((a) => !a.startsWith("--")).map(here);
   if (!files.length) throw new Error("usage: verify-proof <inclusion-proof.json ...>");
   let bad = 0;
   for (const f of files) {

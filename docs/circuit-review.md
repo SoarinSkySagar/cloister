@@ -31,7 +31,7 @@ Read in this order: the package comment in `circuit.go`, `spec/batch.md`, `spec/
 
 ## 2. The constraints, with the test that makes each one fail
 
-Line numbers are for `circuit.go` at this commit. "Mutation" means the constraint was deleted and the named test failed (`mutation_check.py`). **Read section 2a before trusting a row**: eleven v1 rules below are marked *not isolated*: their tests do reject a bad witness, but also without the rule, so the test does not show the rule is needed.
+Line numbers are for `circuit.go` at this commit. "Mutation" means the constraint was deleted and the named test failed (`mutation_check.py`). Section 2a records how that was established and what was found along the way.
 
 ### Ledger rules (v1, unchanged in meaning)
 
@@ -39,13 +39,13 @@ Line numbers are for `circuit.go` at this commit. "Mutation" means the constrain
 |---|---|---|---|
 | L1 | Every leaf read is proven against the running root; every write yields the next root (`applyAt`) | 175–186 | `TestRejectForgedOldLeaf`, `TestRejectWrongStateRoot`, `TestRejectWrongPrevRoot` |
 | L2 | Batch 0 starts from the genesis constant when `prev_state_root = 0` | 218 | `TestRejectBatch0NotFromGenesis` |
-| L3 | A move is at most one of transfer / withdraw / register; flags are boolean; the tx `Active` flag is boolean | 269–275 | `TestRejectTwoKindsInOneMove`, `TestRejectNonBooleanFlag`. **Not isolated** (three mutations not caught) |
+| L3 | A move is at most one of transfer / withdraw / register; flags are boolean; the tx `Active` flag is boolean | 269–275 | `TestRejectNonBooleanTxActiveFlag`, `TestRejectNonBooleanMoveKindFlag`, `TestRejectNonBooleanAssetFlag`, `TestRejectAMoveWithTwoKinds` (adversarial witnesses; mutation: all caught) |
 | L4 | An inactive tx contains only no-ops | 273 | `TestRejectActionsInAnInactiveTxWithAConsistentWitness` (mutation: caught; the earlier test was not isolated) |
-| L5 | The fee move (move 0) can only be a transfer | 274–277 | `TestRejectWithdrawInFeeMove`. **Not isolated** (both mutations not caught) |
+| L5 | The fee move (move 0) can only be a transfer | 274–277 | `TestRejectAFeeMoveThatWithdraws`, `TestRejectAFeeMoveThatRegistersAKey` (adversarial witnesses; mutation: both caught) |
 | L6 | Only QOR can leave the rollup | 286 | `TestRejectUsdWithdrawal` (mutation: caught) |
-| L7 | Amounts and every written balance are in `[0, 2^64)`: no negative balance, no inflation | 288, 297–299, 311–312 | `TestRejectOverdraft`, `TestRejectFeeOverdraft`, `TestRejectAmountOver64Bits`. **Not isolated** (five mutations not caught) |
+| L7 | Amounts and every written balance are in `[0, 2^64)`: no negative balance, no inflation | 288, 297–299, 311–312 | `TestRejectANegativeAmount` (a transfer of `-5` would steal from the receiver), `TestRejectOverdraftWithAConsistentWitness` (qor and usd), `TestRejectCreditOverflow` (qor and usd); mutation: all caught |
 | L8 | A key can only be registered on an account with no key, and never as 0 | 294–295 | `TestRejectKeyOverwriteWithAConsistentWitness`, `TestRejectEmptyKey` (mutation: both caught; the earlier overwrite test was not isolated: a prover could have set the key to `new - old` and replaced someone's key) |
-| L9 | The k-th withdraw of the batch fills slot k with the amount it debited; at most W withdrawals | 318–322, 353 | `TestRejectTamperedAmount` (the slot filling). "At most W": `TestRejectTooManyWithdrawals`, **not isolated** |
+| L9 | The k-th withdraw of the batch fills slot k with the amount it debited; at most W withdrawals | 318–322, 353 | `TestRejectTamperedAmount` (the slot filling). "At most W": `TestRejectMoreWithdrawalsThanSlots` (mutation: caught) |
 | L10 | `withdrawals_root` is the chain's own SHAKE-256 v2 tree over those slots | 355–402 | `TestWithdrawalVectorsMatchRDK`, `TestRejectWrongWithdrawalsRoot`, `TestRejectChangedRecipient` |
 | L11 | `data_hash` squared is a witness, so the proof cannot be re-used with another hash by malleability | 221 | `TestRejectWrongDataHashSquare` |
 
@@ -81,15 +81,29 @@ Line numbers are for `circuit.go` at this commit. "Mutation" means the constrain
 
 One constraint was **removed** because no test could reach it: the 64-bit range of the batch counter `n` (it starts at 0 and only the circuit raises it).
 
-### 2a. Mutation results (19 Nov, all 36 mutations)
+### 2a. Mutation results (20 Nov, all 36 mutations: 36 caught)
 
-`python3 circuits/mutation_check.py` removes one constraint at a time. **25 are caught; 11 are not**, all inherited from circuit v1:
+`python3 circuits/mutation_check.py` removes one constraint at a time and requires a test to fail. **All 36 are caught**, each by a test whose witness is consistent in every other respect, so only that rule can reject it.
 
-`tx Active is boolean` · `move kind flags are boolean` · `a move has at most one kind` · `fee move cannot withdraw` · `fee move cannot register a key` · `amount is below 2^64` · `debited balance stays non-negative` (qor, usd) · `credited balance cannot overflow` (qor, usd) · `at most W withdrawals`.
+It did not start that way. On 19 Nov, 11 inherited v1 constraints were **not** caught, and two older rules (key overwrite, inactive tx) were found to have tests that passed for the wrong reason. The cause: the Go builder keeps balances as `uint64`, so it cannot build a witness in which a balance wraps around the field, and a witness that is inconsistent anywhere is rejected by the root check before it reaches the rule under test. The fix is `circuits/ledger/adversary_test.go`: an **adversarial witness builder** that replays the circuit's own formulas in field arithmetic over an arbitrary-field-element tree with every check off, which is what a malicious prover would run. Its own correctness is tested by comparison: it produces the same state root as the honest builder for the same batch and the circuit accepts it.
 
-**Why:** the Go builder keeps balances and nonces as `uint64`. A real violation of these rules needs the circuit's field arithmetic to *wrap* (a negative balance becomes `r - x`), so a witness consistent in every other respect needs state the builder cannot represent. The existing tests do reject their witnesses, but because the builder's state no longer matches the circuit's, not because of the named rule. Two older tests had the same flaw (key overwrite, inactive tx) and were fixed on 19 Nov with witnesses built to be consistent; these eleven are not fixed yet.
+What the tests demonstrate, in attack terms:
 
-**What this means for you:** the eleven rules are still in the circuit and read as correct, but I have **not shown they are needed**. Please read them line by line. The fix is an adversarial witness builder that does field arithmetic with no checks (what a malicious prover would run); it is the next piece of work.
+| Without this rule | The prover could |
+|---|---|
+| amount `< 2^64` | send a negative amount (`r - 5`): the sender gains 5 and the receiver loses 5 |
+| debited balance stays in range | overdraw an account; its balance wraps to a huge field value |
+| credited balance stays in range | push a receiver past `2^64` |
+| move flags boolean | use flags `2` and `-1` (sum 1) to credit more than was debited; use asset `2` |
+| a move has at most one kind | make one move both a transfer and a withdrawal |
+| fee move cannot withdraw | debit the payer with no withdrawal paid: funds vanish |
+| fee move cannot register | set a key on any key-less account, not just the sender's |
+| at most W withdrawals | debit a withdrawal that no leaf pays |
+| key never overwritten | set the move's key to `new - old`, so `old + move = new` replaces someone's key |
+| inactive tx has no actions | apply actions without bumping the nonce: a free, replayable action |
+| `Active` boolean | scale the nonce bump and the record by 2 |
+
+Some of these constraints are canonicality or defence in depth rather than soundness-critical on their own (the 64-bit range of `expiry`/`not_before`, the old log leaf's shape, boolean party flags); their tests still reject only what that one rule rejects.
 
 ## 3. Where I would look hardest (my own suspicions, in order)
 
@@ -111,8 +125,7 @@ One constraint was **removed** because no test could reach it: the 64-bit range 
 
 ## 4. What the tests do not cover
 
-- Eleven v1 constraints have tests that do not isolate them (section 2a).
 - The Go builder and the circuit share my understanding of the rules. The tests check that they agree, not that the rules are the right ones.
-- `circuits/ledger` has no fuzzing. A random-batch test comparing the builder against the circuit (accept, reject, same state root) would be a useful addition.
+- No fuzzing. The adversarial builder gives hand-written attacks (one per rule); a random-batch test comparing the honest builder, the adversarial builder and the circuit would find combinations I did not think of.
 - Groth16 soundness itself, and gnark's Poseidon2 and BLS12-381 code, are assumed.
 - The on-chain verifier is QoreChain's. We tested that it accepts our proofs (cloister-dev-2, circuit v1) but have not independently audited it. The v2 circuit has **not yet been verified on chain**.

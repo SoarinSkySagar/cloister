@@ -6,7 +6,7 @@ Kept current as we build. Threat references are to [THREAT_MODEL.md](THREAT_MODE
 - Testnet only (`qorechain-diana`). Nothing here has handled value.
 - The final `cloister` rollup is not created yet. Development runs on throwaway `cloister-dev-N` rollups, which are stopped for a refund. `cloister-dev-2` ran circuit v1 and is stopped; `cloister-dev-3` runs circuit v2.
 - The v2 circuit's constraints have not had a human review. Run `go test ./...`, `python3 circuits/mutation_check.py` and read the review guide.
-- **Eleven inherited v1 constraints are not shown to be necessary**: removing any of them does not make a test fail (boolean flags, 64-bit range checks on balances and amounts, fee-move rules, at most W withdrawals). Their tests reject the bad witnesses for another reason. They are in the circuit and look correct; they need an adversarial witness builder to be proven needed (docs/circuit-review.md section 2a).
+- Every circuit constraint is shown necessary by a test (36 of 36 mutations caught), but the tests are hand-written attacks; there is no fuzzing yet.
 
 **What is not proven in the circuit** (checked by watchtowers instead; detected, not prevented)
 - ML-DSA signatures of the sender, every co-signer and the sponsor (T2, T3).
