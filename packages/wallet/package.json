@@ -1,0 +1,15 @@
+{
+  "name": "@cloister/wallet",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "bin": { "cloister-wallet": "src/cli.ts" },
+  "scripts": {
+    "wallet": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@cloister/common": "workspace:*",
+    "@qorechain/rdk": "0.9.0"
+  }
+}
