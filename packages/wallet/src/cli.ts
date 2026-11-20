@@ -124,3 +124,164 @@ async function keyOfFor(rollupId: string | undefined): Promise<(i: number) => Ui
   };
 }
 
+switch (cmd) {
+  case "new": {
+    const name = args[0] ?? "";
+    if (!isValidUserName(name)) throw new Error("name: 2-16 lowercase letters/digits, not a role name");
+    const added = fillEnvValues({ [userEnvName(name)]: generateMnemonic(256) });
+    if (!added.length) throw new Error(`${name} already exists`);
+    const id = await identity(rdk, name, loadEnv());
+    console.log(`created ${name}: ${id.address}`);
+    console.log(`  pk_commit ${id.pkCommit}  (mnemonic stored in .env as ${userEnvName(name)})`);
+    break;
+  }
+  case "whoami": {
+    const me = await identity(rdk, need("--as"), env);
+    console.log(`${me.name}: L1 ${me.address}  (${formatQor(await rdk.rest.getBalance(me.address, "uqor"))} on L1)`);
+    console.log(`  ML-DSA-87 pk_commit ${me.pkCommit}`);
+    const id = flag("--id");
+    if (id) {
+      const { account: a, batches, source } = await myAccount(me, id);
+      console.log(a ? `  ${id} account #${a.index}: ${formatQor(BigInt(a.qor))}, ${fmtUsd(a.usd)}, nonce ${a.nonce}  (after ${batches} batches; ${source})`
+        : `  no account on ${id} yet (build with --register --sponsor <idx> to onboard)`);
+    }
+    break;
+  }
+  case "build": {
+    const me = await identity(rdk, need("--as"), env);
+    const rollupId = need("--id");
+    const state: RollupState = SEQ ? { batches: 0, root: "", accounts: [] } : loadState(rollupId);
+    const mine = (await myAccount(me, rollupId)).account;
+    const register = has("--register");
+    if (!mine && !register) throw new Error(`${me.name} has no account on ${rollupId}: add --register (and --sponsor)`);
+    if (mine && register) throw new Error(`${me.name} already has account #${mine.index}`);
+    const atomic = has("--atomic");
+    const actions: Action[] = [];
+    if (register) actions.push({ kind: "register_key", publicKey: me.publicKey, atomic });
+    if (flag("--to")) {
+      const asset = (flag("--asset") ?? "qor") === "usd" ? ASSET.USD : ASSET.QOR;
+      actions.push({ kind: "transfer", to: await accountIndex(need("--to"), state), asset, amount: units(need("--amount")), atomic });
+    }
+    if (flag("--withdraw")) {
+      actions.push({ kind: "withdraw", recipient: flag("--recipient") ?? me.address, amount: units(need("--withdraw")), atomic });
+    }
+    const parties: number[] = [];
+    for (const p of flags("--party")) parties.push(await accountIndex(p, state));
+    for (const leg of flags("--leg")) {
+      const [from, to, amount, asset = "qor"] = leg.split(":");
+      if (!from || !to || !amount) throw new Error(`--leg ${leg}: expected <from>:<to>:<amount>[:qor|usd]`);
+      actions.push({ kind: "transfer_from", from: await accountIndex(from, state), to: await accountIndex(to, state),
+        asset: asset === "usd" ? ASSET.USD : ASSET.QOR, amount: units(amount), atomic });
+    }
+    for (const w of flags("--withdraw-from")) {
+      const [from, amount, recipient] = w.split(":");
+      if (!from || !amount) throw new Error(`--withdraw-from ${w}: expected <party>:<qor>[:<qor1… recipient>]`);
+      const rcpt = recipient ?? (/^\d+$/.test(from) ? undefined : (await identity(rdk, from, env)).address);
+      if (!rcpt) throw new Error(`--withdraw-from ${w}: give a recipient for an account given by index`);
+      actions.push({ kind: "withdraw_from", from: await accountIndex(from, state), recipient: rcpt, amount: units(amount), atomic });
+    }
+    if (!actions.length) throw new Error("nothing to do: give --to/--amount, --withdraw, --leg, --withdraw-from or --register");
+    const sponsor = flag("--sponsor");
+    const latest = await rdk.rest.getLatestBatch(rollupId).catch(() => undefined);
+    const tx = buildFrameTx({
+      chainId: CHAIN_ID, rollupId,
+      sender: mine ? mine.index : NEW_ACCOUNT,
+      nonce: BigInt(flag("--nonce") ?? mine?.nonce ?? 0),
+      expiryBatch: BigInt((latest ? latest.batchIndex + 1 : 0) + Number(flag("--expiry") ?? 50)),
+      feeAsset: ASSET.QOR, maxFee: units(flag("--fee") ?? "0"),
+      payer: sponsor ? await accountIndex(sponsor, state) : undefined,
+      parties, notBefore: flag("--not-before") ? BigInt(need("--not-before")) : undefined,
+      actions,
+    });
+    const errs = structuralErrors(tx, { chainId: CHAIN_ID, rollupId });
+    if (errs.length) throw new Error(`invalid tx: ${errs.join("; ")}`);
+    writeTx(need("--out"), tx);
+    describe(tx);
+    console.log(`unsigned -> ${flag("--out")}  (${encodeFrameTx(tx).length} B); next: sign --as ${me.name}${tx.sigs.length > 1 ? `, then ${tx.sigs.slice(1).map((x) => `#${x.signer}`).join(", ")} sign` : ""}`);
+    break;
+  }
+  case "sign": {
+    const me = await identity(rdk, need("--as"), env);
+    const path = need("--in");
+    const tx = readTx(path);
+    let slot: number | undefined;
+    if (tx.sender === NEW_ACCOUNT) {
+      const reg = actionsOf(tx).find((a) => a.kind === "register_key");
+      if (reg && Buffer.from(reg.publicKey).equals(Buffer.from(me.publicKey))) slot = NEW_ACCOUNT;
+    }
+    if (slot === undefined) {
+      const acct = (await myAccount(me, tx.rollupId)).account;
+      if (acct && tx.sigs.some((s) => s.signer === acct.index)) slot = acct.index;
+    }
+    if (slot === undefined) throw new Error(`${me.name} is neither the sender, a party nor the sponsor of this tx`);
+    const signed = signFrameTx(tx, slot, me.secretKey);
+    writeTx(path, signed);
+    const role = slot === tx.sender ? "sender" : partiesOf(tx).includes(slot) ? "party" : "sponsor";
+    console.log(`${me.name} signed as ${role} (ML-DSA-87, ${signed.sigs.find((s) => s.signer === slot)!.signature.length} B) -> ${path}`);
+    break;
+  }
+  case "inspect": {
+    const tx = readTx(need("--in"));
+    describe(tx);
+    const s = structuralErrors(tx, { chainId: tx.chainId, rollupId: tx.rollupId });
+    console.log(`  structure: ${s.length ? s.join("; ") : "ok"}`);
+    const unsigned = tx.sigs.filter((x) => x.signature.every((b) => b === 0)).map((x) => x.signer);
+    if (unsigned.length) console.log(`  unsigned slots: ${unsigned.map((i) => (i === NEW_ACCOUNT ? "new account" : `#${i}`)).join(", ")}`);
+    else console.log(`  signatures: ${signatureErrors(tx, await keyOfFor(flag("--id") ?? tx.rollupId)).join("; ") || "ok"}`);
+    break;
+  }
+  case "send": {
+    const rollupId = need("--id");
+    const tx = readTx(need("--in"));
+    if (SEQ && !flag("--envelope") && !flag("--via")) {
+      const r = await seqCall("/tx", { method: "POST", body: { tx: frameTxToHex(tx) } });
+      console.log(`accepted by the sequencer: id ${r.id}\n  track it: pnpm --silent wallet status --seq ${SEQ} --tx ${r.id}`);
+      break;
+    }
+    const errs = [...structuralErrors(tx, { chainId: CHAIN_ID, rollupId }), ...signatureErrors(tx, await keyOfFor(rollupId))];
+    if (errs.length) throw new Error(`refusing to send: ${errs.join("; ")}`);
+    const rollup = await rdk.rest.getRollup(rollupId);
+    const recipients = await Promise.all(rollup.members.map(async (member) => {
+      const kem = await rdk.rest.getKemKey(member);
+      if (!kem) throw new Error(`member ${member} has no ML-KEM key`);
+      return { member, encapsulationKey: kem.publicKey };
+    }));
+    const envelope = sealEnvelope({ chainId: CHAIN_ID, rollupId, epoch: rollup.membersEpoch, recipients, plaintext: encodeFrameTx(tx) });
+    const bad = envelopeMembershipError(envelope, { membersEpoch: rollup.membersEpoch, members: recipients });
+    if (bad) throw new Error(`envelope refused: ${bad}`);
+    const sha = createHash("sha256").update(envelope).digest("hex");
+    console.log(`sealed to ${recipients.length} members at epoch ${rollup.membersEpoch}: ${envelope.length} B, sha256 ${sha.slice(0, 16)}…`);
+    const out = flag("--envelope");
+    if (out) { writeFileSync(out, envelope); console.log(`envelope -> ${out} (hand it to the relayer)`); break; }
+    // Based rollup: the relayer posts (and is paid by the tx's fee). Dedicated: only the sequencer may.
+    const based = rollup.sequencing === "based";
+    if (!based && flag("--via") !== "operator") throw new Error(`${rollupId} is not based: only its sequencer may post. Use --via operator (dev) or --envelope <file>`);
+    const poster = based ? "relayer" : "operator";
+    const { tx: client } = await txClientFor(rdk, poster);
+    const res = await client.postRollupData({ rollupId, data: envelope });
+    if (res.code !== 0) throw new Error(`post failed: ${res.rawLog}`);
+    const inbox = await rdk.rest.getInbox(rollupId);
+    console.log(`posted by ${poster}: ${res.transactionHash} (inbox seq ${inbox.headSequence})`);
+    break;
+  }
+  case "proof": {
+    const me = await identity(rdk, need("--as"), env);
+    const rollupId = flag("--id") ?? (await seqCall("/status")).rollup_id;
+    const p = await seqCall("/proof", { method: "POST", body: { query: signAccountQuery(rollupId, me.publicKey, me.secretKey), tx: need("--tx") } });
+    const out = flag("--out");
+    if (out) writeFileSync(out, JSON.stringify(p, null, 2) + "\n");
+    const r = p.record;
+    console.log(`inclusion proof: ${p.rollupId} batch ${p.batchIndex}, slot ${p.txIndex}; sender #${r.sender}${r.parties.length ? `, co-signers ${r.parties.map((x: number) => `#${x}`).join(", ")}` : ""}`);
+    console.log(`  ${p.txPath.length + p.logPath.length} hashes${out ? ` -> ${out}` : ""}; verify it against the batch's receipt with the receipts tool`);
+    if (p.version >= 2) console.log(`  it carries the digest of what was signed: pnpm --filter @cloister/receipts cli check-tx ${out ?? "<proof.json>"} <your signed tx, hex or file> says whether it is YOUR transaction and which actions applied`);
+    break;
+  }
+  case "status": {
+    const r = await seqCall(`/tx/${need("--tx")}`);
+    console.log(JSON.stringify(r, null, 2));
+    break;
+  }
+  default:
+    console.log("usage: cloister-wallet new|whoami|build|sign|inspect|send (see src/cli.ts)");
+    process.exit(cmd ? 1 : 0);
+}
