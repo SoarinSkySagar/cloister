@@ -10,8 +10,8 @@
 // withdrawal leaf the chain will pay is backed by a debit of the same amount,
 // an applied action debits only the sender or a listed co-signing party, every
 // included tx is inside its time window (checked against an in-state batch
-// counter), and the batch's transaction records are committed in the state
-// root (spec/inclusion.md).
+// counter), every fee is paid to the configured relayer account, and the
+// batch's transaction records are committed in the state root (spec/inclusion.md).
 // What it does not prove (the watchtower does): ML-DSA signatures of the
 // sender and the parties, and that the transactions are the ones in the sealed
 // posts (data_hash).
@@ -34,6 +34,7 @@ type Config struct {
 	Moves       int              `json:"moves"`       // moves per tx: 1 fee move + (Moves-1) actions
 	Withdrawals int              `json:"withdrawals"` // withdrawal slots per batch: 1, 2 or 4
 	Parties     int              `json:"parties"`     // co-signer slots per tx (spec/frame-tx.md, multi-party)
+	Relayer     uint32           `json:"relayer"`     // the account every fee is paid to: a circuit constant
 	ChainID     string           `json:"chain_id"`
 	RollupID    string           `json:"rollup_id"`
 	Genesis     []GenesisAccount `json:"genesis"`
@@ -60,6 +61,9 @@ func (c Config) Validate() error {
 		if g.Index >= LogIndex(c.Depth) {
 			return fmt.Errorf("genesis account %d: the last leaf is reserved for the log", g.Index)
 		}
+	}
+	if c.Relayer >= LogIndex(c.Depth) {
+		return fmt.Errorf("the relayer account %d is not a valid account (the last leaf is reserved for the log)", c.Relayer)
 	}
 	if c.Withdrawals != 1 && c.Withdrawals != 2 && c.Withdrawals != 4 {
 		return fmt.Errorf("withdrawals must be 1, 2 or 4")
@@ -226,6 +230,9 @@ func (c *Circuit) Define(api frontend.API) error {
 		slotAmt[k] = 0
 	}
 
+	// every fee is paid to this account (cfg.Relayer), so a sequencer cannot redirect fees
+	relayer := new(big.Int).SetUint64(uint64(cfg.Relayer))
+
 	// The batch index n is the counter in the log leaf (checked against the
 	// root below, after the accounts have been updated; no account update can
 	// touch that leaf).
@@ -269,9 +276,10 @@ func (c *Circuit) Define(api frontend.API) error {
 			api.AssertIsBoolean(any)                                  // at most one kind
 			api.AssertIsEqual(api.Mul(any, api.Sub(1, tx.Active)), 0) // inactive tx: no-ops only
 			if m == 0 {
-				// the fee move is a payer -> relayer transfer or nothing
+				// the fee move is a payer -> relayer transfer or nothing, and the recipient is the configured relayer
 				api.AssertIsEqual(mv.IsWithdraw, 0)
 				api.AssertIsEqual(mv.IsRegister, 0)
+				api.AssertIsEqual(api.Mul(mv.IsTransfer, api.Sub(mv.To.Index, relayer)), 0)
 			} else {
 				// an applied action debits the sender or an active co-signing party
 				notAuth := api.Sub(1, api.IsZero(api.Sub(mv.From.Index, tx.Sender.Index)))

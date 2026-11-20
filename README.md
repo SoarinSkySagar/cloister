@@ -49,7 +49,6 @@ python3 circuits/mutation_check.py    # removes each constraint in turn; a test 
 - Privacy is from outsiders. Members, including the sequencer and the watchtowers, see everything.
 - ML-DSA signatures are not proven in the circuit; the member watchtowers verify them. There is one member watchtower so far.
 - The circuit's constraints have **not been reviewed by a human yet**. Tests show every constraint is needed (each was removed in turn and a test failed), but they are hand-written attacks, not fuzzing.
-- The fee recipient is not fixed inside the circuit (finding F1 in the review guide).
 - The trusted setup was run by one party.
 - Watchtower re-execution of batches and alerts are designed, not built.
 

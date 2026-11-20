@@ -84,7 +84,7 @@ sighash = SHAKE-256/32( "cloister/frametx/v1" ‖ enc_unsigned(tx) )
 
 **Decided (18 Nov), implemented in `packages/common/src/frametx.ts`:**
 - **Fee:** flat. The fee charged is exactly `max_fee`, which the user chooses. The relayer refuses txs below its minimum. (Rule 5's `min(max_fee, fee_schedule)` therefore simplifies to `max_fee`.)
-- **Relayer account:** fixed in the rollup's config (account 1 on `cloister-dev-2`). It receives every fee.
+- **Relayer account:** fixed in the rollup's config (`relayer` in `circuits/setup/<id>/config.json`, account 1 on the dev rollups) and enforced by the circuit: every fee is paid to it, so a sequencer cannot redirect fees.
 - **New accounts:** `sender = 0xFFFFFFFF`, `nonce = 0`, and the first action is `register_key`. The sender signature is checked against the key in that frame. The sequencer assigns the lowest index above every index in use, in bundle order, so watchtowers can recompute it.
 - **Keys:** a Cloister account uses its owner's L1 ML-DSA-87 key (one mnemonic for both layers), so `pk_commit` is derivable from the chain's PQC registry.
 - **Circuit limits:** at most 3 ACTION frames, at most 3 parties, withdraw recipients are 42-character `qor1` addresses. `expiry_batch` and the GUARD `not_before_batch` are enforced by the circuit.

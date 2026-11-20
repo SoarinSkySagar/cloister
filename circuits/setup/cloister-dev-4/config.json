@@ -1,0 +1,24 @@
+{
+  "depth": 16,
+  "txs": 4,
+  "moves": 4,
+  "withdrawals": 4,
+  "chain_id": "qorechain-diana",
+  "rollup_id": "cloister-dev-4",
+  "genesis": [
+    {
+      "index": 0,
+      "pk_commit": "63cbac3be236d9f4d48e6c8e5f151c20fae74bcc05fb4857a868cec56611fe20",
+      "qor": 9900000000,
+      "usd": 1000000000000
+    },
+    {
+      "index": 1,
+      "pk_commit": "2d9f659a506d097a7ced4ac20a067b78cadf73292a924c33c56e99218ca97ddb",
+      "qor": 0,
+      "usd": 0
+    }
+  ],
+  "parties": 3,
+  "relayer": 1
+}

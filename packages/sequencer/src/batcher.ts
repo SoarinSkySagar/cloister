@@ -32,11 +32,11 @@ export interface SequencerConfig {
 
 /**
  * The prover reports a tx it cannot include as "tx <k>: fee: ...", "tx <k>: window: ..." or
- * "tx <k> action <j>: auth: ..." (an unpayable fee, a tx outside its time window, or a debit of an account that is
- * neither the sender nor a party). The tx is dropped and the batch retried.
+ * "tx <k> action <j>: auth: ..." (an unpayable fee, a tx outside its time window, a debit of an account that is
+ * neither the sender nor a party, or a relayer other than the circuit's). The tx is dropped and the batch retried.
  */
 export function txFailure(stderr: string): { index: number; reason: string } | undefined {
-  const m = /tx (\d+)(?: action \d+)?: ((?:fee|window|auth|parties|account index)[^\n]*)/.exec(stderr);
+  const m = /tx (\d+)(?: action \d+)?: ((?:fee|window|auth|relayer|parties|account index)[^\n]*)/.exec(stderr);
   return m ? { index: Number(m[1]), reason: m[2]!.trim() } : undefined;
 }
 export const feeFailure = txFailure;

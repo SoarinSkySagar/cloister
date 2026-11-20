@@ -6,13 +6,12 @@ Kept current as we build. Threat references are to [THREAT_MODEL.md](THREAT_MODE
 - Testnet only (`qorechain-diana`). Nothing here has handled value.
 - The final `cloister` rollup is not created yet. Development runs on throwaway `cloister-dev-N` rollups, which are stopped for a refund. `cloister-dev-2` ran circuit v1 and is stopped; `cloister-dev-3` runs circuit v2.
 - The v2 circuit's constraints have not had a human review. Run `go test ./...`, `python3 circuits/mutation_check.py` and read the review guide.
-- Every circuit constraint is shown necessary by a test (36 of 36 mutations caught), but the tests are hand-written attacks; there is no fuzzing yet.
+- Every circuit constraint is shown necessary by a test (37 of 37 mutations caught), but the tests are hand-written attacks; there is no fuzzing yet.
 
 **What is not proven in the circuit** (checked by watchtowers instead; detected, not prevented)
 - ML-DSA signatures of the sender, every co-signer and the sponsor (T2, T3).
 - That a transaction's recorded time window is the one it signed (T7).
 - That a skipped action had to be skipped (T6), and ordering or censorship (T8).
-- The fee recipient is not fixed to the relayer in the circuit (T5, finding F1).
 
 **Trust**
 - One sequencer, which is also the rollup creator (T8). On a dedicated rollup only the sequencer may post, so the relayer forwards over HTTP; relayer posting on a based rollup is untested on chain.
@@ -24,7 +23,7 @@ Kept current as we build. Threat references are to [THREAT_MODEL.md](THREAT_MODE
 **Circuit shape**
 - 4 transactions per batch, 3 actions per transaction, up to 3 co-signers, 4 withdrawals per batch, 65,535 accounts.
 - Withdrawal recipients must be 42-character `qor1` addresses; only QOR can be withdrawn. USD is a rollup-internal asset.
-- Setting up the circuit for a `cloister-dev-N` id (two Keccak blocks per withdrawal leaf) took about 4.5 minutes and **12.6 GB of RAM** at its peak on a 15 GB machine. The 8-byte `cloister` id needs one block per leaf and less.
+- Setting up the circuit for a `cloister-dev-N` id (two Keccak blocks per withdrawal leaf) took about 4.5 minutes and **13.2 GB of RAM** at its peak on a 15 GB machine (it fits with little to spare; close other programs). The 8-byte `cloister` id needs one block per leaf and less.
 - A different shape means a new circuit, a new verifying key and, once a rollup has settled a batch, a new rollup.
 
 **Operations**

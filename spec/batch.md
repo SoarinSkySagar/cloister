@@ -10,6 +10,7 @@ Implemented in [`circuits/ledger`](../circuits/ledger). The sequencer (TypeScrip
 | Tx slots per batch | 4 | Padded with inactive slots; a power of two (the transaction root is a Merkle tree) |
 | Moves per tx | 4 | Move 0 is the fee (payer → relayer), moves 1–3 are actions |
 | Parties per tx | 3 | Co-signers whose accounts an action may debit ([frame-tx.md](frame-tx.md)) |
+| Relayer | one account | A constant of the circuit (`relayer` in `config.json`): every fee is paid to it |
 | Withdrawal slots | 4 | Withdrawals tree depth 2 |
 
 Measured on 18 Nov for circuit v1 (3 moves, no parties, no log): **1,460,727 R1CS constraints for `cloister` (8-byte id), 4 public inputs, no commitment extension. Proving takes 5.4 s and setup takes 2 min, with 9.4 GB peak RAM (during setup).** Keccak (the withdrawals root) is about 75% of the constraints. With `cloister-dev-2` (two-block leaves) it is 2,147,554 constraints, a 9 s proof and a 3.5 min setup. The proving key is 1.3 GB and the VK is 1,356 bytes raw.
@@ -39,13 +40,14 @@ A config also fixes `chain_id`, `rollup_id` (both baked into the withdrawal leav
 
 1. A tx whose fee the payer cannot cover is **not included**; the sequencer drops it. Otherwise the sender's nonce increments and the fee moves, even if every action fails.
 2. Actions apply in order. A run of consecutive `atomic` actions applies all-or-nothing. A failing non-atomic action is skipped (it becomes a no-op), and the reason is reported for the watchtower.
-3. A tx is **not included** (the sequencer drops it and retries the batch) if its window excludes this batch (`window:`), an action debits an account that is neither the sender nor a party (`auth:`), or its parties are not distinct valid accounts (`parties`).
+3. A tx is **not included** (the sequencer drops it and retries the batch) if its `relayer` is not the config's (`relayer:`), its window excludes this batch (`window:`), an action debits an account that is neither the sender nor a party (`auth:`), or its parties are not distinct valid accounts (`parties`).
 4. An action fails on: insufficient balance, a non-QOR withdrawal, a recipient that isn't a 42-character `qor1` address, full withdrawal slots, `register_key` on an account that already has a key, or an empty key.
 
 ## What the circuit enforces
 
 - Every leaf read is proven against the current root, and every write produces the next root. Batch 0 starts from the genesis root.
 - Each move is at most one of transfer, withdraw or register_key, and all its flags are boolean. Inactive tx slots contain only no-ops.
+- **Every fee is paid to the configured relayer account.** The fee move's recipient is not a witness the prover can choose.
 - An applied action debits the **sender or an active party** of its tx; `register_key` is sender-only. The fee move can only be a transfer. Party slots are booleans and are part of the tx record.
 - Every included tx satisfies `not_before <= n <= expiry`, where `n` is the batch counter in the log leaf; both bounds are range-checked to 64 bits.
 - No account update may touch the reserved log leaf. After all txs, the circuit replaces the log leaf with `{tx_root, n + 1}`, where `tx_root` is the Merkle root of the batch's tx records, computed from the executed moves ([inclusion.md](inclusion.md)).

@@ -449,3 +449,28 @@ func TestRejectMoreWithdrawalsThanSlots(t *testing.T) {
 	})
 	mustFail(t, cfg, w, "two withdrawals with one withdrawal slot")
 }
+
+func TestRejectAFeeThatDoesNotPayTheRelayer(t *testing.T) {
+	cfg := testConfig()
+	// control: the same fee paid to the configured relayer is accepted
+	_, rt := advSetup(t, cfg)
+	mustSolve(t, cfg, advBuild(t, cfg, rt, oneTx(cfg, alice, transferMove(alice, relay, fe(0), fe(10)))), "a fee paid to the relayer")
+	// a sequencer pointing the fee at an account it controls
+	_, rt = advSetup(t, cfg)
+	w := advBuild(t, cfg, rt, oneTx(cfg, alice, transferMove(alice, carol, fe(0), fe(10))))
+	mustFail(t, cfg, w, "a fee paid to an account other than the configured relayer")
+}
+
+func TestCheckedBuilderAndConfigRefuseAnotherRelayer(t *testing.T) {
+	cfg := testConfig()
+	tree := fundedTree(t, cfg)
+	tx := TxIn{Sender: alice, Payer: alice, Relayer: carol, Fee: 1, Actions: []ActionIn{{Kind: "transfer", To: bob, Amount: 1}}}
+	if _, _, err := Build(cfg, tree, false, Batch{Txs: []TxIn{tx}}, Options{}); err == nil {
+		t.Fatal("the checked builder accepted a tx whose relayer is not the configured one")
+	}
+	bad := testConfig()
+	bad.Relayer = LogIndex(bad.Depth)
+	if bad.Validate() == nil {
+		t.Fatal("the reserved log leaf was accepted as the relayer account")
+	}
+}

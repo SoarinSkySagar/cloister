@@ -19,7 +19,7 @@ const (
 
 func testConfig() Config {
 	return Config{
-		Depth: 16, Txs: 4, Moves: 3, Withdrawals: 4, Parties: 3,
+		Depth: 16, Txs: 4, Moves: 3, Withdrawals: 4, Parties: 3, Relayer: relay,
 		ChainID: "qorechain-diana", RollupID: "cloister",
 		Genesis: []GenesisAccount{
 			{Index: treas, Pk: "01", Qor: 1_000_000_000_000, Usd: 1_000_000_000_000},

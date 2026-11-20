@@ -63,7 +63,7 @@ State and transactions
 What was hard
 - The verifying key locks after a rollup's first batch, so we test on throwaway dev rollups that we stop for a refund, and create the real rollup after the circuit is final.
 - The circuit can't verify ML-DSA, so the watchtowers do. THREAT_MODEL.md states that limit.
-- Mutation testing (removing each constraint to see if a test fails) showed that 11 older constraints had tests that passed for the wrong reason: our honest builder stores balances as 64-bit numbers, so it couldn't build the wrapped-around values a malicious prover would. We wrote an adversarial witness builder that replays the circuit's arithmetic with every check off, and now all 36 constraints are shown necessary, each by an attack it stops.
+- Mutation testing (removing each constraint to see if a test fails) showed that 11 older constraints had tests that passed for the wrong reason: our honest builder stores balances as 64-bit numbers, so it couldn't build the wrapped-around values a malicious prover would. We wrote an adversarial witness builder that replays the circuit's arithmetic with every check off, and now all 37 constraints are shown necessary, each by an attack it stops.
 - The chain refuses deposits into a private ZK rollup (checked by simulation), so funding is operator-onboarded.
 
 We build this AI-natively. The two of us decide and review, and Claude Code writes most of the code. AI_USAGE.md logs it, including the mistakes it made and we caught.

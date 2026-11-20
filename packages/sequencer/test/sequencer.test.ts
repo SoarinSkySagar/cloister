@@ -102,6 +102,7 @@ test("txFailure reads every refusal the prover reports, with or without an actio
   assert.deepEqual(txFailure("tx 1: window: not valid before batch 9 (this is batch 3)"), { index: 1, reason: "window: not valid before batch 9 (this is batch 3)" });
   assert.deepEqual(txFailure("execute: tx 0 action 2: auth: account 7 is not the sender or a party of this tx"), { index: 0, reason: "auth: account 7 is not the sender or a party of this tx" });
   assert.deepEqual(txFailure("tx 3: parties must be distinct, differ from the sender and be valid accounts"), { index: 3, reason: "parties must be distinct, differ from the sender and be valid accounts" });
+  assert.deepEqual(txFailure("tx 2: relayer: fees are paid to account 1, not 4"), { index: 2, reason: "relayer: fees are paid to account 1, not 4" });
   assert.equal(txFailure("tx 0: something unrelated"), undefined);
 });
 

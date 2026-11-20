@@ -20,7 +20,7 @@ type Batch struct {
 type TxIn struct {
 	Sender   uint32     `json:"sender"`
 	Payer    uint32     `json:"payer"`   // == sender when there is no VERIFY_PAYER frame
-	Relayer  uint32     `json:"relayer"` // fee recipient
+	Relayer  uint32     `json:"relayer"` // must equal the config's relayer (the circuit pays every fee to it)
 	FeeAsset uint8      `json:"fee_asset"`
 	Fee      uint64     `json:"fee"`
 	Actions  []ActionIn `json:"actions"`
@@ -381,6 +381,9 @@ func Build(cfg Config, t *Tree, prevIsGenesis bool, batch Batch, opts Options) (
 		tr := TxResult{Applied: make([]bool, len(tx.Actions))}
 		if len(tx.Actions) > cfg.Moves-1 {
 			return nil, nil, fmt.Errorf("tx %d has %d actions, max %d", i, len(tx.Actions), cfg.Moves-1)
+		}
+		if !opts.Unchecked && tx.Relayer != cfg.Relayer {
+			return nil, nil, fmt.Errorf("tx %d: relayer: fees are paid to account %d, not %d", i, cfg.Relayer, tx.Relayer)
 		}
 		fee := move{kind: 1, from: tx.Payer, to: tx.Relayer, asset: tx.FeeAsset, amount: tx.Fee}
 		if tx.Fee == 0 {

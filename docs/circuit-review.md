@@ -27,7 +27,6 @@ Read in this order: the package comment in `circuit.go`, `spec/batch.md`, `spec/
 | That a skipped action *had* to be skipped (the circuit accepts a no-op for any action) | not checked yet (needs the watchtower's re-execution, not built) |
 | That the tx nonce in the signed tx equals the account nonce | sequencer; the circuit only increments |
 | Ordering, inclusion and censorship | watchtower inclusion check (not built); based inbox |
-| That the fee goes to the configured relayer (see finding F1) | visible in the record; not enforced |
 
 ## 2. The constraints, with the test that makes each one fail
 
@@ -58,6 +57,12 @@ Line numbers are for `circuit.go` at this commit. "Mutation" means the constrain
 | P3 | Party flags are boolean | 256 | `TestRejectNonBooleanPartyFlag` (consistent root, so only this constraint can reject it) |
 | P4 | The party list is part of the committed record | 262–264 | `TestRejectUnlistedPartyAddedLater`; mutation: caught by every valid-batch test |
 
+### Fee recipient (new, 20 Nov)
+
+| # | Constraint | Line | Negative test / mutation |
+|---|---|---|---|
+| R1 | The fee move's recipient is the config's relayer account (a circuit constant) | 273 | `TestRejectAFeeThatDoesNotPayTheRelayer` (control: a fee to the relayer is accepted), `TestCheckedBuilderAndConfigRefuseAnotherRelayer`; mutation: caught |
+
 ### Time window and batch counter (new)
 
 | # | Constraint | Line | Negative test / mutation |
@@ -81,9 +86,9 @@ Line numbers are for `circuit.go` at this commit. "Mutation" means the constrain
 
 One constraint was **removed** because no test could reach it: the 64-bit range of the batch counter `n` (it starts at 0 and only the circuit raises it).
 
-### 2a. Mutation results (20 Nov, all 36 mutations: 36 caught)
+### 2a. Mutation results (20 Nov, all 37 mutations: 37 caught)
 
-`python3 circuits/mutation_check.py` removes one constraint at a time and requires a test to fail. **All 36 are caught**, each by a test whose witness is consistent in every other respect, so only that rule can reject it.
+`python3 circuits/mutation_check.py` removes one constraint at a time and requires a test to fail. **All 37 are caught**, each by a test whose witness is consistent in every other respect, so only that rule can reject it.
 
 It did not start that way. On 19 Nov, 11 inherited v1 constraints were **not** caught, and two older rules (key overwrite, inactive tx) were found to have tests that passed for the wrong reason. The cause: the Go builder keeps balances as `uint64`, so it cannot build a witness in which a balance wraps around the field, and a witness that is inconsistent anywhere is rejected by the root check before it reaches the rule under test. The fix is `circuits/ledger/adversary_test.go`: an **adversarial witness builder** that replays the circuit's own formulas in field arithmetic over an arbitrary-field-element tree with every check off, which is what a malicious prover would run. Its own correctness is tested by comparison: it produces the same state root as the honest builder for the same batch and the circuit accepts it.
 
@@ -107,7 +112,7 @@ Some of these constraints are canonicality or defence in depth rather than sound
 
 ## 3. Where I would look hardest (my own suspicions, in order)
 
-**F1. The fee recipient is not fixed in the circuit.** `Move.To` of the fee move is a free witness. A malicious sequencer can send every fee to an account it controls instead of the configured relayer. It is visible in the tx record (an inclusion proof shows `to` of move 0), but the circuit does not stop it. A fix is cheap: make the relayer index a `Config` constant and assert `fee.To.Index == relayer` when the fee move is applied. This changes the circuit, so it must be decided before the freeze. *Recommendation: fix it.*
+**F1. Fixed (20 Nov).** The fee recipient used to be a free witness, so a malicious sequencer could send every fee to an account it controls. The relayer index is now a `Config` constant (`relayer` in `config.json`) and the circuit asserts the fee move pays it (row R1). The new setup is `cloister-dev-4`. Kept here because it was found by review of my own design, and because a reviewer should still check that the constant cannot be changed after the verifying key is fixed (it is baked into the circuit).
 
 **F2. Skipped actions are unconstrained.** The circuit lets any action be a no-op. The sequencer can skip a valid action and still take the fee (partial censorship). The record shows it (`applied` is visible as an all-zero move) and an inclusion proof makes it provable to the user, but nothing rejects it. Closing it in-circuit is hard (it needs the "would have applied" condition as a constraint: roughly a balance comparison per move); the practical answer is the watchtower's re-execution, which is not built.
 

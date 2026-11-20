@@ -3,7 +3,7 @@
 HTTP API and batch loop for one rollup. It verifies signed frame txs (ML-DSA-87, nonce, expiry, fee floor), queues them, then every interval (or when 4 are queued) it seals the bundle to the members, proves with the Go circuit, posts, submits with the ML-DSA-87 anchor, and pays withdrawals on L1. See design.md §A5.
 
 ```bash
-pnpm sequencer --id cloister-dev-2 [--port 8787] [--interval 30] [--min-fee 0.01] [--relayer 1] [--proof-log]
+pnpm sequencer --id cloister-dev-4 [--port 8787] [--interval 30] [--min-fee 0.01] [--proof-log]   # the relayer account comes from the circuit config
 export CLOISTER_SEQUENCER_URL=http://127.0.0.1:8787     # for the wallet
 ```
 

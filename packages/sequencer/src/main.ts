@@ -1,7 +1,8 @@
 /**
  * cloister-sequencer: HTTP API + batch loop for one rollup.
  *
- *   pnpm sequencer --id cloister-dev-2 [--port 8787] [--interval 30] [--min-fee 0.01] [--relayer 1] [--proof-log]
+ *   pnpm sequencer --id cloister-dev-4 [--port 8787] [--interval 30] [--min-fee 0.01] [--proof-log]
+ *   (the relayer account is the circuit's: read from circuits/setup/<id>/config.json)
  *
  * API (JSON):
  *   POST /tx            { tx: <hex FrameTx> }        -> { id } (the sighash) or 400 { error }
@@ -13,9 +14,11 @@
  *
  * It listens on 127.0.0.1 only. A public deployment would sit behind the relayer.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
-  addressFor, allIdentities, frameTxFromHex, loadEnv, testnetClient, txClientFor, verifyAccountQuery,
+  REPO_ROOT, addressFor, allIdentities, frameTxFromHex, loadEnv, testnetClient, txClientFor, verifyAccountQuery,
   type AccountQuery,
 } from "@cloister/common";
 import { Sequencer } from "./batcher.ts";
@@ -28,12 +31,19 @@ const port = Number(flag("--port") ?? 8787);
 const intervalSec = Number(flag("--interval") ?? 30);
 const minFee = BigInt(Math.round(Number(flag("--min-fee") ?? "0.01") * 1e6));
 
+// The fee recipient is a constant of the circuit, so the config is the one source of truth for it.
+const setupConfig = JSON.parse(readFileSync(join(REPO_ROOT, "circuits", "setup", rollupId, "config.json"), "utf8")) as { relayer?: number };
+if (setupConfig.relayer === undefined) throw new Error(`circuits/setup/${rollupId}/config.json has no "relayer": this setup is from an older circuit`);
+if (flag("--relayer") !== undefined && Number(flag("--relayer")) !== setupConfig.relayer) {
+  throw new Error(`--relayer ${flag("--relayer")} differs from the circuit's relayer account ${setupConfig.relayer}`);
+}
+
 const rdk = testnetClient();
 const env = loadEnv();
 const { tx } = await txClientFor(rdk, "operator");
 const operator = (await addressFor("operator", env))!;
 const seq = new Sequencer(
-  { rollupId, relayerIndex: Number(flag("--relayer") ?? 1), minFee, maxTxs: 4, proofLog: args.includes("--proof-log") },
+  { rollupId, relayerIndex: setupConfig.relayer, minFee, maxTxs: 4, proofLog: args.includes("--proof-log") },
   rdk, tx, operator,
 );
 // Crash recovery, then re-queue what was accepted before the restart.

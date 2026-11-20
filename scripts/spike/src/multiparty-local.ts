@@ -2,16 +2,16 @@
  * Local end-to-end check of circuit v2 (no chain): real frame txs through the TypeScript codec, the Go prover with
  * a real Groth16 proof, and the TypeScript inclusion verifier.
  *
- *   pnpm --filter @cloister/spike exec tsx src/multiparty-local.ts [setup-dir]    (default circuits/setup/cloister-dev-3)
+ *   pnpm --filter @cloister/spike exec tsx src/multiparty-local.ts [setup-dir]    (default circuits/setup/cloister-dev-4)
  *
- * Needs a v2 setup (`go run ./cmd/ledger setup -dir setup/cloister-dev-3` in circuits/, several GB of RAM).
+ * Needs a v2 setup (`go run ./cmd/ledger setup -dir setup/cloister-dev-4` in circuits/, several GB of RAM).
  * Batch 0 onboards alice and bob and funds them; batch 1 runs a two-party atomic swap and a time-locked tx.
  * Every inclusion proof must reach the batch's state_root, and a tx outside its window must be refused.
  */
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { pqKeyFromSeed } from "@qorechain/qoresign";
 import {
   ASSET, NEW_ACCOUNT, REPO_ROOT, buildFrameTx, nextFreeIndex, signFrameTx, signatureErrors, structuralErrors, toLedgerTx,
@@ -19,7 +19,7 @@ import {
 } from "@cloister/common";
 import { proofStateRoot, toHex, type InclusionProof } from "../../../packages/receipts/src/inclusion.ts";
 
-const setup = process.argv[2] ?? join(REPO_ROOT, "circuits", "setup", "cloister-dev-3");
+const setup = resolve(process.argv[2] ?? join(REPO_ROOT, "circuits", "setup", "cloister-dev-4"));
 const config = JSON.parse(readFileSync(join(setup, "config.json"), "utf8")) as { rollup_id: string; chain_id: string };
 const ids = { chainId: config.chain_id, rollupId: config.rollup_id };
 const key = (n: number) => pqKeyFromSeed(new Uint8Array(32).fill(n));

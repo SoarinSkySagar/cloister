@@ -33,6 +33,7 @@ MUTATIONS = {
     "withdraw cannot be QOR-excluded (only QOR leaves)": ("api.AssertIsEqual(api.Mul(mv.IsWithdraw, mv.Asset), 0)", "_ = mv"),
     "key can never overwrite a key": ("api.AssertIsEqual(api.Mul(mv.IsRegister, f.Pk), 0)", "_ = f"),
     "key can never be empty": ("api.AssertIsEqual(api.Mul(mv.IsRegister, api.IsZero(mv.PkCommit)), 0)", "_ = mv"),
+    "every fee is paid to the configured relayer": ("api.AssertIsEqual(api.Mul(mv.IsTransfer, api.Sub(mv.To.Index, relayer)), 0)", "_ = relayer"),
     "inactive tx has only no-ops": ("api.AssertIsEqual(api.Mul(any, api.Sub(1, tx.Active)), 0)", "_ = any"),
     # ---- ledger rules from circuit v1 ----
     "tx Active flag is boolean": ("api.AssertIsBoolean(tx.Active)", "_ = tx"),
