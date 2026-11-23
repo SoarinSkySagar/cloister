@@ -50,3 +50,47 @@ As far as we know this is the only custom-circuit ZK rollup settled by `x/rdk`, 
 | What we know is missing or weak | [LIMITS.md](LIMITS.md) |
 | Which parts Claude wrote, and the mistakes it made | [AI_USAGE.md](AI_USAGE.md) |
 
+## Honest limits (the full list is in LIMITS.md)
+
+- Privacy is from outsiders. Members, including the sequencer and the watchtowers, see everything.
+- ML-DSA signatures are not proven in the circuit; the member watchtowers verify them. There is one member watchtower so far.
+- The circuit's constraints have **not been reviewed by a human yet**. Tests show every constraint is needed (each was removed in turn and a test failed), and a randomised test compares the builder, a reference interpreter and the circuit, but the generator is ours.
+- The dev rollups' trusted setup was run by one party. A multi-party ceremony tool exists and has been rehearsed ([docs/ceremony.md](docs/ceremony.md)), not run for a real key.
+- The proof system (Groth16 over BLS12-381) is not post-quantum, and the circuit does not verify the ML-DSA signatures. [docs/pq-auth.md](docs/pq-auth.md) measures why ML-DSA cannot be verified in this circuit and prototypes a hash-based signature that can.
+- Watchtower re-execution (`--replay`) is built and tested against the builder, not yet run against a live rollup. Alerts are designed, not built.
+
+## Layout
+
+| Path | What |
+|---|---|
+| `circuits/` | Groth16 circuit (Go, gnark), its reference model, tests and the mutation check; `ceremony/` multi-party setup; `hbs/` hash-based signature prototype |
+| `packages/common` | Frame-transaction codec, signatures, state types |
+| `packages/sequencer` | Verifies signed transactions, batches, proves, posts, submits, pays withdrawals |
+| `packages/relayer` | Public door: validates and forwards transactions |
+| `packages/wallet` | CLI: keys, build and sign multi-party transactions, fetch inclusion proofs |
+| `packages/watchtower` | Member node: decrypts and checks every batch, signs verdicts |
+| `packages/receipts` | Verifier for receipts, verdicts and inclusion proofs (CLI and page) |
+| `packages/explorer` | Explorer for the rollup (black theme, frames decoded) |
+| `spec/` | Wire formats, state layout, inclusion proofs, golden vectors |
+
+More in [CLAUDE.md](CLAUDE.md#layout) and [design.md](design.md).
+
+## Credits
+
+Built with these open source libraries and kits:
+
+| Library | Licence | Use |
+|---|---|---|
+| [@qorechain/rdk](https://github.com/qorechain/qorechain-rdk) | Apache-2.0 | Rollup lifecycle, batches, envelopes, receipts, withdrawals |
+| [@qorechain/pqc](https://github.com/qorechain/qorechain-pqc) | Apache-2.0 | ML-DSA / ML-KEM / SHAKE-256 primitives |
+| [@qorechain/qoresign](https://github.com/qorechain/qoresign) | Apache-2.0 | Hybrid ML-DSA-87 signing |
+| [@qorechain/qoreseal](https://github.com/qorechain/qoreseal) | Apache-2.0 | ML-KEM-1024 sealing helpers |
+| [gnark](https://github.com/Consensys/gnark) | Apache-2.0 | Groth16 circuit and prover |
+| [esbuild](https://github.com/evanw/esbuild) | MIT | Bundles the receipt verifier page for the browser |
+| [@noble/hashes](https://github.com/paulmillr/noble-hashes) | MIT | SHAKE-256 and Keccak for verdicts and the Poseidon2 round keys, in the browser and Node |
+
+The inclusion-proof design is inspired by [EIP-8288](https://eips.ethereum.org/EIPS/eip-8288) (Vitalik Buterin, Thomas Coratger), and the frame format by EIP-8141. The explorer's layout follows the Dora beacon-chain explorer; no code was taken from it.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
