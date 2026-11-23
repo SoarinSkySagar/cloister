@@ -182,3 +182,186 @@ pk_commit = SHAKE-256(ML-DSA-87 pubkey) reduced mod r              // computed o
 | **Liveness:** alert if the inbox head grows unbatched for more than N blocks | Detects stalls |
 | **Receipt:** run `verifySettlementReceipt` on every batch | Settlement is verifiably anchored |
 
+**Alerts:** console, a webhook (Discord/Telegram), and dashboard badges.
+
+### A3b. Multi-party frames, time window and inclusion proofs (added 18 Nov)
+
+Frames now carry **co-signers**: a `VERIFY_PARTY` frame names an account that signs the same transaction and whose balance the actions may debit (`transfer_from`, `withdraw_from`). A multi-party atomic transaction is delivery-versus-payment, a swap, an escrow release or payroll in one object, and sponsored gas still applies. A `GUARD` frame adds a "not before batch N" lock; the existing expiry and the lock are enforced by the circuit against a batch counter kept in the state. The circuit also commits each batch's **transaction records** (including co-signers and window) in a Merkle root inside `state_root`, so a user can prove "my transaction executed in batch N" without revealing anything else. Specs: [spec/frame-tx.md](spec/frame-tx.md), [spec/inclusion.md](spec/inclusion.md), [spec/state.md](spec/state.md). The sealed, members-only model fits a consortium settlement rollup: members see everything, outsiders see ciphertext and proofs, and a signed inclusion proof is the receipt a counterparty or auditor can check.
+
+**Circuit v3 (22 Nov).** Three changes close or narrow the circuit's weakest points. (1) **Checked skips (F2):** a skipped action must be one that could not apply, judged on the atomic group's tentative balances; a sequencer can no longer censor an action and keep the fee. (2) **A transaction digest in every record (F3, F6):** a Poseidon2 commitment to everything the signers wrote (planned actions including skipped ones, window, co-signers, payer, max fee, signed sender, chain and rollup), so anyone holding the signed transaction can tell whether a record is theirs (`check-tx`); it is also the message a future in-circuit signature would cover. (3) **New accounts run on an empty leaf** and must register a key. The watchtower gains `--replay`: it re-executes every decrypted bundle from genesis through the prover's builder (`ledger simulate`, no keys) and compares the root with the chain's, which closes "the proof is valid but is not the sealed bundle". Tooling beside it: a multi-party setup ceremony (`circuits/ceremony`, `docs/ceremony.md`), and a measured answer to in-circuit signatures (`docs/pq-auth.md`: ML-DSA-87 needs about 60 million constraints; a Poseidon2 Winternitz/Merkle signature needs 0.22 million and is prototyped in `circuits/hbs`, keyed by the account nonce).
+
+**Two properties of frames worth stating plainly.** (1) *One signature authorises a whole bundle.* The signature hash covers every frame, so a user, and each co-signer, signs once however many actions the transaction holds. With ML-DSA-87 a signature is 4,627 bytes and costly to verify, so replacing N signatures with one saves verification work and shrinks the sealed post; the fee is flat per transaction, so bundling is cheaper too. (2) *Verify frames never change state.* `VERIFY_SENDER`, `VERIFY_PARTY`, `VERIFY_PAYER` and `GUARD` produce no moves in the circuit. The only state changes outside actions are the sender's nonce bump and the fee debit, which the protocol applies after verification, so a mempool or watchtower can validate a transaction without simulating it. The limit on (1) is the circuit's moves per transaction (3 actions today): each extra move costs roughly 25,000 constraints per transaction slot, so batch capacity is really a budget of `slots × moves`.
+
+### A6b. Co-signed receipts (added 18 Nov: the "public assurance over private data" feature)
+
+A settlement receipt proves a batch was settled and anchored. It does not say that anyone looked at the data, which on a private rollup only members can. So each member watchtower signs a **verdict** per batch with its ML-DSA-87 key: what it decrypted and checked (hash link, batch index, tx count, structure, every ML-DSA signature), and whether all of it passed. The verifier accepts a verdict only if the signer is a current member of the rollup, its key is read from the chain's PQC registry (never from the verdict), and the verdict names the same state root and data hash the chain holds. The receipts page then shows "settled" and, separately, "checked by N member watchtower(s)".
+
+- Format and signing domain: [spec/verdict.md](spec/verdict.md), golden vector in `spec/vectors/verdict.json`.
+- Honest limits: a verdict is an off-chain signature (published in `receipts/`), not an on-chain attestation, and a single colluding member set can sign a false "pass". It adds accountability and a public, checkable record; it does not remove the need to trust that at least one watchtower is honest. Optional later: stake and slashing.
+
+## A7. Days 1–2 spike: go or no-go (17–18 Nov)
+
+Record every transaction hash in PROOF.md.
+
+- [x] VK format: **gnark binary encoding** (from the RDK source)
+- [x] VK and proof encoding: gnark raw and compressed are both accepted for VKs and proofs; we use raw
+- [x] Registered ML-DSA (hybrid, with PoP) and **ML-KEM** keys for the sequencer and watchtower (17 Nov, see PROOF.md)
+- [x] Created `cloister-dev-1` (17 Nov): `defi`, private, dedicated, spike gnark VK (raw); layer `cloister-dev-1` registered, escrow 9,900 QOR
+- [x] Members [operator, watchtower] set; 3,536-byte envelope posted; chain SHA-256 matches; both members open it, a non-member key is refused
+- [x] **Batches 0 and 1 verified on chain** (Groth16/BLS12-381, gnark raw or compressed proof both accepted; a tampered statement is refused), `data_hash` = SHA-256 of the sealed post, ML-DSA-87 anchor, finalized immediately
+- [x] Settlement receipt for batch 0: `valid: true`, all six checks pass (`receipts/cloister-dev-1-0.json`)
+- [x] Batch 1 committed a 1 QOR withdrawal (v2 SHAKE-256 tree in the proof); `executeWithdrawal` paid the relayer from escrow
+- [x] Stopped `cloister-dev-1`: net +10,898.93 QOR refunded (escrow + layer stake, minus the fee), layer decommissioned; receipts still verify after the stop. **The dev-cycle strategy works**
+- [x] **Simulated 17 Nov:** `defi` + private + `based` creation is **accepted**, so the final `cloister` rollup can be based
+- [ ] Check whether any deposit path exists for `defi` rollups (`depositToRollupMsg` is documented for qledger-v1 only)
+
+**Result (17 Nov UTC): GO.** Every item passed on chain, including stop-and-refund.
+
+**No-go (end of 18 Nov):** if the Groth16 batch or the withdrawal fails, switch to an optimistic `qledger-v1` rollup with frame transactions inside posted data. Receipts become the headline.
+
+## A8. Threat model outline
+
+- **Assets:** balances, transaction contents, sender/sponsor identity, escrow, withdrawal rights
+- **Actors:** malicious sequencer, malicious relayer, malicious sponsor, outside observer, quantum adversary, compromised classical key
+- **Threats and mitigations:**
+  - Q-Day key compromise (ML-DSA everywhere)
+  - forged transactions (watchtower signature re-check)
+  - sequencer censorship or reordering (inclusion watchtower, based inbox)
+  - relayer dropping transactions (users can post themselves under based sequencing)
+  - a sponsor drained by spam (the `max_fee` cap and signing each tx)
+  - fee replay (nonce, expiry and chain/rollup binding in the signature hash)
+  - VK swap (alarm)
+  - data withholding
+  - escrow-backed balances
+  - metadata leakage (sizes, timing and withdrawals are public; the relayer hides the poster identity)
+  - removed members keeping old data
+  - trusted setup (our own BLS12-381 powers of tau)
+  - single sequencer
+- **Outsiders vs members:** the rollup acts like a validium to outsiders (they can check validity but can't rebuild state) and gives full data availability to members.
+
+## A9. Schedule
+
+| Dates | Milestone |
+|---|---|
+| **16–17 Nov** | Register both team members (all four steps). Create the `cloister` repo (Apache-2.0, GitHub App) and the project page. Q-Day Drill signup before **17 Nov 23:59 UTC**, using a fresh account |
+| 17–18 Nov | Spike (A7) and go/no-go |
+| 19–23 Nov | Circuit v1: 2-asset ledger, transfer, fees. Sequencer/prover loop. Wallet CLI |
+| 23–25 Nov | Frame transactions end to end: sponsor frame, relayer, reimbursement |
+| 18–20 Nov | **Co-signed receipts** (§A6b): watchtower verdicts, verifier shows both |
+| 24–26 Nov | Withdrawals (in the circuit or fallback), receipts, verifier page |
+| **26 Nov** | **Part B go/no-go** (§B6) |
+| 27 Nov | Workshop 4, protocol clinic (16:30 UTC). Ask the open questions |
+| 27–29 Nov | Watchtower and dashboard (+ Part B if go). **Freeze the circuit and create the final `cloister` rollup by 28 Nov**, then run the full demo flow on it |
+| 30 Nov–1 Dec | THREAT_MODEL, LIMITS, PROOF, README (credit every kit), AI_USAGE, ≤3-min video |
+| 2 Dec | Buffer, final testnet run, **submit before 23:59 UTC** |
+
+## A10. Demo video (≤3 min, Part A)
+
+1. A user with **zero L1 QOR** sends a sponsored, sealed frame transaction. The L1 explorer shows only the relayer and ciphertext.
+2. The batch is proven and finalized immediately. The ML-DSA anchor is shown on the explorer.
+3. The settlement receipt is verified live, with every check green.
+4. A withdrawal is executed and the funds arrive on L1.
+5. Watchtower: the operator drops a transaction and the inclusion alarm fires. A forged signature is flagged.
+6. Threat model in 15 seconds.
+
+---
+
+# PART B: Extension: DeFi dark pool (only if 26 Nov passes)
+
+**Goal:** a private batch auction on the same rollup. Orders stay sealed from the public, the L1 mempool and other traders until settlement, and every fill in a batch clears at one uniform price, which removes most of the gain from front-running.
+
+## B1. What changes vs Part A
+
+| Area | Change |
+|---|---|
+| Frames | Enable `place_order` (0x10) and `cancel_order` (0x11). Same format, sponsorship and relayer |
+| State | Use `orders_root` in the account leaf (a per-account open-orders tree) and lock balances while orders are open |
+| Circuit | New clearing logic. **It must be in the final circuit before `cloister` is created**, because the VK locks after batch 0 |
+| Assets | QOR vs `USD` (rollup-internal). Only QOR is withdrawable on L1 |
+| Watchtower | Adds a clearing re-check and an order-inclusion check |
+
+**State compatibility:** the leaf already has `bal_USD` and `orders_root`, so the upgrade keeps the existing state root. No migration.
+
+## B2. Order and auction rules
+
+- **Order:** `{order_id, side: BUY|SELL, amount, limit_price, batch_window}`. Funds are locked at placement.
+- **Batch window:** an auction closes at a fixed inbox checkpoint (every 64 entries, or every N blocks). Orders after the cutoff roll into the next window.
+- **Clearing:** take the crossing orders and choose a single price `p*` within the overlap that maximizes matched volume, with a deterministic tie-break such as the midpoint. Fill pro-rata on the constrained side. Unfilled amounts stay open or are refunded, depending on the order flag.
+- **Fees:** a protocol fee in the received asset, plus the relayer fee through the sponsor frame as before.
+
+## B3. What the clearing circuit proves
+
+1. Every fill satisfies its limit: buyers pay ≤ their limit and sellers receive ≥ theirs, both at `p*`.
+2. All fills in the batch use the same `p*`.
+3. Each asset is conserved across all accounts, plus fees.
+4. Pro-rata allocation is correct, and no fill exceeds an order's size.
+5. Locked funds are released or consumed correctly, and `orders_root` is updated.
+6. Volume is maximal: no crossing order pair is left unmatched at `p*`.
+
+Price math uses fixed-point integers, with explicit rounding toward the protocol.
+
+**Batch shape:** for example 8 order slots per batch. Benchmark the constraint count early.
+
+## B4. Who sees what
+
+| Party | Order contents before settlement? |
+|---|---|
+| Public / L1 mempool / other traders | ❌ ciphertext only (users are not members) |
+| Sequencer (matcher) | ✅ (trust assumption, see B5) |
+| Watchtowers | ✅ (auditors) |
+| After settlement | Net balance changes and withdrawals are public. Orders stay sealed |
+
+## B5. Additions to the threat model
+
+- **Sequencer front-running:**
+  - Mitigations: uniform price, fixed cutoffs, a based inbox (orders the sequencer posts are timestamped and attributed on L1), and the watchtower checking for orders posted after it has seen others.
+  - Residual: the sequencer still sees order flow.
+  - Future work: threshold decryption, or a committee of several sequencers.
+- **Withholding orders to move `p*`:** the inclusion watchtower catches it.
+- **Spoof orders:** funds lock at placement, and the fee is paid even if the order is cancelled.
+- **Price manipulation in thin markets:** a minimum batch volume, and clearing only when both sides are present.
+- **The second asset is synthetic:** the production path is fUSD bridged through an EVM escrow (described, not built).
+
+## B6. Go/no-go (26 Nov)
+
+Start Part B only if **all** of these are working on testnet:
+- a sponsored frame tx posted by the relayer
+- proven and finalized batches with ML-DSA anchors
+- a paid withdrawal
+- a verified receipt
+- the watchtower inclusion check and signature check
+
+Otherwise, polish Part A and put B1–B5 in the README as the design for the next phase.
+
+## B7. Effort and demo
+
+- **Effort:** about 5–8 person-days (clearing circuit, order lifecycle, watchtower additions).
+- **Demo addition (about 30 s):**
+  1. Two sealed orders are posted, and outsiders see ciphertext only.
+  2. The batch clears at one price.
+  3. The watchtower re-checks the clearing price and every fill independently.
+
+---
+
+# PART C: Logistics
+
+## C1. Funding: ✅ done (15,000 test QOR on hand)
+
+Budget: 10,000 stake (100 burned) + 1,000 layer + about 100–300 in fees ≈ 3,700 QOR left for withdrawal liquidity and the relayer. **That is enough for only one rollup.** Create `cloister` once, after a dry run (`--generate-only` + simulate, or `qorollup --dry-run`), and keep the Q-Day Drill account separate from the creator account.
+
+## C2. Team roles
+
+| Team size | Roles |
+|---|---|
+| 4 | **A** circuit · **B** sequencer, prover and relayer · **C** watchtower and receipt verifier · **D** wallet, docs and video |
+| 3 | A · B · C, with docs and video shared |
+| 2 | A takes A+B · C takes C+D, and Part B is unlikely |
+
+## C3. Open questions for the organisers
+
+1. What VK format does the chain accept? Is there a reference Groth16 circuit with the 4 canonical inputs?
+2. Has a ZK batch settled on testnet since v3.2.7/v3.2.8?
+3. Can `--privacy encapsulated` be combined with `--sequencing based`?
+4. Is there a deposit path for `defi` rollups?
+5. What is the exact byte layout of the v2 withdrawal leaf? (Or read the RDK's `withdrawalLeafV2`.)
+6. What is the Protocol Builders judging rubric?
